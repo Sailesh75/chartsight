@@ -1,0 +1,17 @@
+[
+  {
+    "id": "n1",
+    "title": "Office visit — diabetes & hypertension",
+    "text": "Patient: John A. Miller   MRN: 4482910   DOB: 03/14/1961   Phone: (419) 555-0173\n\nChief complaint: follow-up of diabetes and high blood pressure.\n\nAssessment: 64-year-old male with type 2 diabetes mellitus, poorly controlled, with diabetic peripheral neuropathy. Essential hypertension, stable on lisinopril. Hyperlipidemia. Continues metformin 1000 mg twice daily and atorvastatin 40 mg nightly."
+  },
+  {
+    "id": "n2",
+    "title": "ED note — shortness of breath (gaps present)",
+    "text": "Patient: Maria Gomez   MRN: 7781234   DOB: 22-Aug-1955\n\n72-year-old female presents with shortness of breath. History of congestive heart failure and diabetes. Exam notable for lower extremity edema.\n\nAssessment: acute exacerbation of heart failure. Diabetes — continue current regimen. Chronic kidney disease. Discharged home on furosemide."
+  },
+  {
+    "id": "n3",
+    "title": "Cardiology note — well documented",
+    "text": "Patient: Robert King   MRN: 9902003   DOB: 11/02/1949   Phone: 419-555-0199\n\n75-year-old male with chronic systolic congestive heart failure (NYHA class III), atrial fibrillation on apixaban, and stage 3b chronic kidney disease. COPD, moderate persistent. Assessment: stable, continue current therapy."
+  }
+]

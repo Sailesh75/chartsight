@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment (never commit installed packages)
+.venv/
+venv/
+env/
+
+# Local AWS / secrets
+.env
+.aws/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
