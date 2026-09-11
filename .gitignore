@@ -1,6 +1,12 @@
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
 
 # Virtual environment (never commit installed packages)
 .venv/
@@ -15,3 +21,6 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# Claude Code local settings
+.claude/settings.local.json

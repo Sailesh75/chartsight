@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from medical_nlp import MODEL_LABEL, REGION, analyze, load_notes
+from chartsight.nlp import MODEL_LABEL, REGION, analyze, load_notes
 
 st.set_page_config(page_title="Clinical Documentation Intelligence", page_icon="🩺", layout="wide")
 
@@ -86,7 +86,9 @@ with tab_codes:
                 )
             },
         )
-        st.caption("Each code is linked to the exact text span that supports it — the evidence trail an auditor needs.")
+        st.caption(
+            "Each code is linked to the exact text span that supports it — the evidence trail an auditor needs."
+        )
 
 with tab_phi:
     st.caption("Protected health information is detected and removed before any downstream processing.")
@@ -101,5 +103,9 @@ with tab_gaps:
         st.markdown(f"- {g}")
 
 st.divider()
-foot = f"Analyzed with Amazon Bedrock · {MODEL_LABEL} · {REGION}" if live else "Sample output · connect AWS for live analysis"
+foot = (
+    f"Analyzed with Amazon Bedrock · {MODEL_LABEL} · {REGION}"
+    if live
+    else "Sample output · connect AWS for live analysis"
+)
 st.caption(f"{foot}  |  Synthetic data only — no real PHI.")
