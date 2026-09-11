@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chartsight"
+version = "0.1.0"
+description = "Evidence-linked HCC coding — an LLM pipeline that codes clinical notes to ICD-10-CM with citations and flags risk-adjustment documentation gaps."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Sailesh Kafle" }]
+dependencies = [
+    "streamlit>=1.37",
+    "boto3>=1.34",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "boto3-stubs[bedrock-runtime]>=1.34",
+]
+
+[tool.setuptools]
+packages = ["chartsight"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # line length is handled by `ruff format`
+allowed-confusables = ["–", "—"]  # en/em dashes are intentional in clinical text
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["chartsight", "evals", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["streamlit.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
