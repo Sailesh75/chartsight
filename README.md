@@ -1,9 +1,9 @@
-# Clinical Documentation Intelligence
+# ChartSight
 
-A proof of concept for **Topic 1 – Clinical Natural Language Technology**: a POC
-that reads a clinical note, extracts diagnoses as **ICD-10-CM codes**, removes
-**PHI**, and flags **risk-adjustment (HCC) documentation gaps** — powered by
-**Amazon Bedrock** (Anthropic Claude).
+**Evidence-linked HCC coding.** An LLM pipeline that reads a clinical note,
+extracts diagnoses as **ICD-10-CM codes** with the *exact evidence span* that
+supports each one, removes **PHI**, and flags **risk-adjustment (HCC)
+documentation gaps** — powered by **Amazon Bedrock** (Anthropic Claude).
 
 The output shape — *code + confidence + the exact evidence span* plus a
 documentation-gap review — mirrors the risk-adjustment coding and
@@ -38,7 +38,7 @@ payment-integrity task with a well-designed prompt, entirely inside AWS.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
+pip install -e .
 streamlit run app.py
 ```
 
@@ -59,12 +59,52 @@ Override the model with `BEDROCK_MODEL_ID` (default
 **Cost:** Claude Haiku 4.5 on Bedrock costs a fraction of a cent per note. A new
 AWS account's free credits cover this project many times over.
 
+## Evaluation harness
+
+`evals/` measures the pipeline instead of just demoing it:
+
+- `evals/fragments.py` — ~25 condition fragments, each with known-correct
+  ICD-10-CM code(s), CMS-HCC V28 mapping, and expected documentation gap (if
+  any) — including adversarial cases (negation, family history, resolved
+  conditions) a correct coder must *not* code.
+- `evals/generate.py` — composes synthetic notes from the fragments with PHI
+  inserted at known offsets. Because every fragment's ground truth is known,
+  gold labels fall out by construction — no manual span tagging.
+- `evals/run.py` — scores the pipeline against the gold set: code precision/
+  recall/F1 (exact and category-level), **PHI recall** (the metric that
+  actually matters for de-identification), documentation-gap detection recall
+  and false-positive rate, and confidence calibration.
+
+```bash
+python -m evals.generate                 # writes evals/gold.jsonl
+python -m evals.run --mode mock           # score the offline sample engine
+python -m evals.run --mode auto           # score live Bedrock, if creds resolve
+```
+
+Writes `evals/report.md` and `evals/report.json`.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check .          # lint
+ruff format .         # format
+mypy                  # strict type check
+pytest                # unit + eval-harness regression tests
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above plus the eval harness
+against the sample engine on every push/PR.
+
 ## Files
 
 - `app.py` — Streamlit UI.
-- `medical_nlp.py` — Bedrock inference, redaction, the sample fallback engine.
-- `data/notes.json` — synthetic clinical notes (no real PHI).
+- `chartsight/nlp.py` — Bedrock inference, redaction, the sample fallback engine.
+- `data/notes.json` — synthetic clinical notes for the UI (no real PHI).
+- `evals/` — fragment library, gold-set generator, and scorer.
+- `tests/` — pytest suite (pipeline smoke test + eval-harness regression tests).
 
 ## Synthetic data — no PHI
 
-The sample notes are invented for the demo. They contain no real patient data.
+All notes — the UI samples and the eval gold set — are synthetically generated
+or invented for the demo. None contain real patient data.
