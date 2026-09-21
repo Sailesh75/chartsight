@@ -37,7 +37,9 @@ ignore = ["E501"]  # line length is handled by `ruff format`
 allowed-confusables = ["–", "—"]  # en/em dashes are intentional in clinical text
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"  # matches the dev venv's interpreter; keeps mypy able to parse
+# transitive stubs (e.g. numpy, pulled in by pytest) that use 3.12+ syntax. The project
+# itself still supports >=3.11 (see [project]) — this doesn't require 3.12+ syntax in our code.
 strict = true
 warn_unreachable = true
 files = ["chartsight", "evals", "tests"]
