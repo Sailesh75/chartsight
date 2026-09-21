@@ -6,6 +6,9 @@ Pipeline for a single clinical note, in one Bedrock call:
     evidence span that supports it.
   * Gap review       -> documentation-specificity gaps that reduce
     risk-adjustment (HCC) capture.
+  * Guardrail        -> every code is checked against the real ICD-10-CM code
+    set (chartsight.guardrail); anything hallucinated is pulled out into
+    "rejected_codes" instead of being trusted.
 
 Two tiers keep the demo alive:
   * Bedrock - live Amazon Bedrock (Claude) when AWS credentials resolve.
@@ -21,6 +24,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from chartsight import guardrail
 from chartsight.schema import AnalysisExtraction
 
 PKG_DIR = Path(__file__).resolve().parent
@@ -280,12 +284,19 @@ def analyze(text: str, mode: str = "auto") -> dict[str, Any]:
         conditions = _sample_icd10(text)
         gaps = _sample_gaps(conditions)
 
+    # Guardrail: never trust a code just because the model (or the sample engine) said
+    # so — verify it's real against the FY2026 CMS/CDC ICD-10-CM code set. Applied to
+    # both engines uniformly, outside the AWS try/except above so a guardrail issue is
+    # never mistaken for "Bedrock unavailable".
+    checked = guardrail.apply(conditions)
+
     return {
         "engine": engine,
         "region": REGION if use_aws else None,
         "fallback_reason": fallback_reason,
         "phi": phi,
         "redacted": redact(text, phi),
-        "conditions": conditions,
+        "conditions": checked.verified,
+        "rejected_codes": checked.rejected,
         "insights": {"engine": engine, "gaps": gaps},
     }
