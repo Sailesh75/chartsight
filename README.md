@@ -18,6 +18,7 @@ In a single Amazon Bedrock call, the app:
 | **De-identify** | Detects protected health information (names, MRNs, dates, phone numbers) and redacts it before it is shown. |
 | **Code** | Extracts each condition, assigns the most specific ICD-10-CM code with a confidence, and returns the exact text span that supports it. |
 | **Gap review** | Flags documentation-specificity gaps that reduce HCC capture (e.g. unspecified heart failure, diabetes without a linked complication, CKD without a stage). |
+| **Guardrail** | Checks every returned code against the real ICD-10-CM code set; anything hallucinated is discarded before it reaches the UI. |
 
 ## Why Amazon Bedrock
 
@@ -58,6 +59,23 @@ Override the model with `BEDROCK_MODEL_ID` (default
 
 **Cost:** Claude Haiku 4.5 on Bedrock costs a fraction of a cent per note. A new
 AWS account's free credits cover this project many times over.
+
+## Structured output & the code guardrail
+
+The Bedrock call uses **tool-use**, not prose scraping: `chartsight/schema.py`
+defines the extraction as a Pydantic model, its JSON schema is passed as the
+tool's `input_schema`, and the model's `tool_use` response is validated with
+`model_validate()` before anything downstream sees it — a malformed code or an
+out-of-range confidence raises immediately rather than silently corrupting a
+result.
+
+That still doesn't stop a model from confidently returning a code that simply
+doesn't exist. `chartsight/guardrail.py` checks every code against the real
+FY2026 ICD-10-CM code set (`data/icd10cm_valid_codes.txt`, ~74.7k codes,
+sourced from the CDC/CMS public release — see `scripts/build_icd10_reference.py`
+for provenance and how to refresh it for a new fiscal year). Anything not in
+that set is pulled into `rejected_codes` instead of being trusted; the UI
+surfaces it in a "discarded by the guardrail" panel rather than hiding it.
 
 ## Evaluation harness
 
@@ -100,7 +118,11 @@ against the sample engine on every push/PR.
 
 - `app.py` — Streamlit UI.
 - `chartsight/nlp.py` — Bedrock inference, redaction, the sample fallback engine.
+- `chartsight/schema.py` — Pydantic extraction schema (Bedrock tool-use input).
+- `chartsight/guardrail.py` — hallucinated-code guardrail.
 - `data/notes.json` — synthetic clinical notes for the UI (no real PHI).
+- `data/icd10cm_valid_codes.txt` — real FY2026 ICD-10-CM code set (guardrail reference data).
+- `scripts/build_icd10_reference.py` — (re)generates the file above from the official CDC source.
 - `evals/` — fragment library, gold-set generator, and scorer.
 - `tests/` — pytest suite (pipeline smoke test + eval-harness regression tests).
 
