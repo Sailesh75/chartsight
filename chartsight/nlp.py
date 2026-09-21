@@ -21,6 +21,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from chartsight.schema import AnalysisExtraction
+
 PKG_DIR = Path(__file__).resolve().parent
 DATA_DIR = PKG_DIR.parent / "data"
 
@@ -51,31 +53,29 @@ def aws_available() -> bool:
 # --------------------------------------------------------------------------- #
 _SYSTEM = (
     "You are a clinical coding and documentation-integrity engine used in a healthcare "
-    "payment-integrity setting (risk adjustment / HCC). You read a clinical note and return "
-    "structured data. Return ONLY valid JSON — no prose, no markdown fences."
+    "payment-integrity setting (risk adjustment / HCC). You read a clinical note and call "
+    "the record_analysis tool with the structured extraction — never respond in prose."
 )
 
-_SCHEMA_INSTRUCTIONS = """Extract the following from the clinical note and return ONLY this JSON object:
+_INSTRUCTIONS = """Extract the following from the clinical note, via the record_analysis tool:
 
-{
-  "phi": [ {"text": "<verbatim substring from the note>", "type": "NAME|ID|DATE|PHONE|ADDRESS|EMAIL|AGE"} ],
-  "conditions": [ {"text": "<verbatim evidence substring>", "code": "<ICD-10-CM code>", "description": "<official code description>", "confidence": <number 0..1>} ],
-  "gaps": [ "<one concise documentation-specificity gap that reduces HCC/risk-adjustment capture, with a concrete fix>" ]
-}
+- phi: every PHI entity (name, MRN/ID, date, phone, address, email, age).
+- conditions: each diagnosed condition, its most specific ICD-10-CM code, the official
+  code description, and a confidence (0-1). Return 0-8 conditions.
+- gaps: documentation-specificity gaps that lose HCC/risk-adjustment capture (e.g. heart
+  failure without type/acuity, diabetes without a linked complication, CKD without a
+  stage). If documentation is already specific, return a single positive statement.
 
 Rules:
 - "text" fields MUST be exact substrings copied verbatim from the note.
-- Assign the most specific ICD-10-CM code the documentation supports.
-- In "gaps", flag unspecified diagnoses that lose HCC capture (e.g. heart failure without type/acuity, diabetes without a linked complication, CKD without a stage). If documentation is already specific, return a single positive statement.
-- Return 0-8 conditions. Output JSON only."""
+- Do not code negated, family-history-only, ruled-out, or resolved/historical conditions."""
 
-
-def _extract_json(text: str) -> dict[str, Any]:
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError("no JSON object in model output")
-    obj: dict[str, Any] = json.loads(text[start : end + 1])
-    return obj
+_TOOL_NAME = "record_analysis"
+_TOOL_SPEC = {
+    "name": _TOOL_NAME,
+    "description": "Record the PHI, coded conditions, and documentation gaps extracted from a clinical note.",
+    "input_schema": AnalysisExtraction.model_json_schema(),
+}
 
 
 def _bedrock_extract(text: str) -> dict[str, Any]:
@@ -86,43 +86,47 @@ def _bedrock_extract(text: str) -> dict[str, Any]:
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1500,
         "system": _SYSTEM,
-        "messages": [{"role": "user", "content": _SCHEMA_INSTRUCTIONS + "\n\nClinical note:\n" + text}],
+        "tools": [_TOOL_SPEC],
+        "tool_choice": {"type": "tool", "name": _TOOL_NAME},
+        "messages": [{"role": "user", "content": _INSTRUCTIONS + "\n\nClinical note:\n" + text}],
     }
     resp = client.invoke_model(modelId=BEDROCK_MODEL_ID, body=json.dumps(body))
     payload = json.loads(resp["body"].read())
-    raw = "".join(block.get("text", "") for block in payload.get("content", []))
-    data = _extract_json(raw)
+
+    tool_input = next(
+        (block["input"] for block in payload.get("content", []) if block.get("type") == "tool_use"),
+        None,
+    )
+    if tool_input is None:
+        raise ValueError("Bedrock response contained no tool_use block")
+
+    # Raises pydantic.ValidationError on a malformed code, out-of-range confidence, etc. —
+    # analyze() catches that and falls back to the sample engine rather than trusting
+    # unvalidated model output.
+    extraction = AnalysisExtraction.model_validate(tool_input)
 
     phi = []
-    for e in data.get("phi", []):
-        value = str(e.get("text", "")).strip()
-        idx = text.find(value)
-        if not value or idx == -1:
+    for entity in extraction.phi:
+        idx = text.find(entity.text)
+        if idx == -1:
             continue
-        phi.append(
-            {"text": value, "type": str(e.get("type", "PHI")).upper(), "begin": idx, "end": idx + len(value)}
-        )
+        phi.append({"text": entity.text, "type": entity.type, "begin": idx, "end": idx + len(entity.text)})
 
     conditions = []
-    for c in data.get("conditions", []):
-        value = str(c.get("text", "")).strip()
-        idx = text.find(value)
-        try:
-            conf = max(0.0, min(1.0, float(c.get("confidence", 0.9))))
-        except (TypeError, ValueError):
-            conf = 0.9
+    for condition in extraction.conditions:
+        idx = text.find(condition.text)
         conditions.append(
             {
-                "text": value,
-                "code": str(c.get("code", "—")),
-                "description": str(c.get("description", "")),
-                "confidence": conf,
+                "text": condition.text,
+                "code": condition.code,
+                "description": condition.description,
+                "confidence": condition.confidence,
                 "begin": idx if idx != -1 else 0,
-                "end": (idx + len(value)) if idx != -1 else 0,
+                "end": (idx + len(condition.text)) if idx != -1 else 0,
             }
         )
 
-    gaps = [str(g) for g in data.get("gaps", []) if str(g).strip()]
+    gaps = [g for g in extraction.gaps if g.strip()]
     return {"phi": phi, "conditions": conditions, "gaps": gaps or ["Documentation appears specific."]}
 
 
