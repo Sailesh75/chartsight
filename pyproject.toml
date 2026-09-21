@@ -42,7 +42,7 @@ python_version = "3.12"  # matches the dev venv's interpreter; keeps mypy able t
 # itself still supports >=3.11 (see [project]) — this doesn't require 3.12+ syntax in our code.
 strict = true
 warn_unreachable = true
-files = ["chartsight", "evals", "tests"]
+files = ["chartsight", "evals", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
 module = ["streamlit.*"]

@@ -90,6 +90,16 @@ with tab_codes:
             "Each code is linked to the exact text span that supports it — the evidence trail an auditor needs."
         )
 
+    rejected = result.get("rejected_codes") or []
+    if rejected:
+        with st.expander(f"⚠️ {len(rejected)} code(s) discarded by the guardrail"):
+            st.caption(
+                "These were proposed but aren't in the official ICD-10-CM code set, so they were "
+                "removed before reaching the table above."
+            )
+            for r in rejected:
+                st.markdown(f"- `{r['code']}` ({r['text']}) — {r['reason']}")
+
 with tab_phi:
     st.caption("Protected health information is detected and removed before any downstream processing.")
     if result["phi"]:
