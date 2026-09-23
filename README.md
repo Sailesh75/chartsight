@@ -11,13 +11,15 @@ medical-record review work that payment-integrity vendors do for health plans.
 
 ## What it does
 
-In a single Amazon Bedrock call, the app:
+For each note, the app:
 
 | Step | What it does |
 | --- | --- |
 | **De-identify** | Detects protected health information (names, MRNs, dates, phone numbers) and redacts it before it is shown. |
 | **Code** | Extracts each condition, assigns the most specific ICD-10-CM code with a confidence, and returns the exact text span that supports it. |
-| **Gap review** | Flags documentation-specificity gaps that reduce HCC capture (e.g. unspecified heart failure, diabetes without a linked complication, CKD without a stage). |
+| **Ground (RAG)** | Retrieves real candidate codes for each condition from the official FY2026 code set and has the model re-select its code from those candidates only. |
+| **HCC tagging** | Tags every code with its CMS-HCC V28 category straight from the CMS crosswalk. The model never supplies HCCs. |
+| **Gap review** | Flags documentation-specificity gaps (e.g. unspecified heart failure, diabetes without a linked complication, CKD without a stage). |
 | **Guardrail** | Checks every returned code against the real ICD-10-CM code set; anything hallucinated is discarded before it reaches the UI. |
 
 ## Why Amazon Bedrock
@@ -57,8 +59,9 @@ Override the model with `BEDROCK_MODEL_ID` (default
 `us.anthropic.claude-haiku-4-5-20251001-v1:0`) and its display name with
 `BEDROCK_MODEL_LABEL`.
 
-**Cost:** Claude Haiku 4.5 on Bedrock costs a fraction of a cent per note. A new
-AWS account's free credits cover this project many times over.
+**Cost:** Claude Haiku 4.5 on Bedrock costs a fraction of a cent per note (two
+calls per note with grounding on). A new AWS account's free credits cover this
+project many times over.
 
 ## Structured output & the code guardrail
 
@@ -71,11 +74,82 @@ result.
 
 That still doesn't stop a model from confidently returning a code that simply
 doesn't exist. `chartsight/guardrail.py` checks every code against the real
-FY2026 ICD-10-CM code set (`data/icd10cm_valid_codes.txt`, ~74.7k codes,
-sourced from the CDC/CMS public release — see `scripts/build_icd10_reference.py`
-for provenance and how to refresh it for a new fiscal year). Anything not in
-that set is pulled into `rejected_codes` instead of being trusted; the UI
-surfaces it in a "discarded by the guardrail" panel rather than hiding it.
+FY2026 ICD-10-CM code set (`data/icd10cm_codes.tsv`, ~74.7k billable codes).
+Anything not in that set is pulled into `rejected_codes` instead of being
+trusted; the UI surfaces it in a "discarded by the guardrail" panel rather than
+hiding it.
+
+## RAG grounding on the official code set
+
+The guardrail catches codes that don't exist. It can't catch a real code that is
+wrong for the note, such as I50.9 when the note says "chronic systolic". Grounding
+goes after that:
+
+1. **Extract**: the first Bedrock call finds each condition mention, as before.
+2. **Retrieve**: `chartsight/retrieval.py` looks up the top 8 real candidate
+   codes for each mention, querying with the mention plus the model's own
+   description.
+3. **Select**: a second Bedrock call chooses one code per condition. The tool's
+   schema gives each condition its own `enum` of candidates, so a code outside
+   the list can't be expressed at all. The model can also answer `NONE`, for
+   example when the mention turns out to be negated.
+4. **Tag**: `chartsight/reference.py` attaches the V28 HCC by crosswalk lookup.
+
+Two deliberate choices:
+
+- **HCCs are never shown to the model.** Telling it which candidate risk-adjusts
+  would push it toward the paying code. That's upcoding, which is exactly what
+  payment integrity is meant to catch.
+- **Retrieval is lexical (BM25), not embeddings.** ICD-10-CM descriptions are
+  short and formulaic, so BM25 is strong, explainable, needs no API call or
+  extra dependency, and runs in CI. The corpus is each code's official
+  description, its tabular inclusion terms (e.g. I50.9 ← "Congestive heart
+  failure NOS") and its CDC Alphabetic Index entries (e.g. N18.9 ←
+  "Failure, failed renal chronic"). That's the same lookup a human coder does.
+  Each phrase is indexed separately and a code scores as its best-matching
+  phrase. Pooling all of a code's phrases into one document measurably hurt
+  recall, because heavily indexed codes got buried by length normalization.
+  A dense retriever can implement the same `Retriever` protocol and be
+  compared on the harness's retrieval metric.
+
+Pass `grounded=False` to `analyze()`, or `--no-grounding` to the eval runner,
+for the single-pass baseline so the two can be A/B-scored.
+
+**Measured impact** (Claude Haiku 4.5 on Bedrock, 60-note synthetic gold set,
+one run each, 2026-09-23):
+
+| Metric | Single pass | Grounded | Δ |
+| --- | --- | --- | --- |
+| Exact code F1 | 62.8% | **78.5%** | +15.7 pts |
+| Exact code precision | 71.7% | **86.4%** | +14.7 pts |
+| HCC capture F1 (V28) | 88.5% | **94.9%** | +6.4 pts |
+| Accuracy of codes at ≥0.9 confidence | 75.2% | **93.1%** | better calibrated |
+
+The grounded pass changed 45 first-pass codes. Typical fixes: a non-billable
+category code (N18.3 → N18.32), a code that doesn't exist (I73.911 → I70.211),
+and a wrong acuity (I50.23 → I50.22). Treat the numbers as directional: the
+set is small and synthetic, and each mode ran once.
+
+### Reference data
+
+Both files are built from official public releases by
+`scripts/build_reference.py` and committed as plain TSV, so fiscal-year updates
+show up as readable diffs:
+
+| File | Source |
+| --- | --- |
+| `data/icd10cm_codes.tsv` | CDC/NCHS FY2026 ICD-10-CM code descriptions, tabular XML (inclusion terms) and Alphabetic Index XML |
+| `data/hcc_v28.tsv` | ICD-10 → HCC mapping and HCC labels from the CMS-HCC V28 2026 midyear/final model software (the mapping the payment model itself uses, including age edits) |
+
+```bash
+python scripts/build_reference.py --cache-dir .cache   # refresh for a new year (update URLs first)
+```
+
+Grounding HCCs on the crosswalk rather than on memory fixed real errors. The
+first version of the eval fragment library had wrong V28 HCCs for 9 of 26
+fragments. Examples: E11.9 and I50.9 *do* risk-adjust under V28 (HCC 38 and
+HCC 226), and claudication-only PAD (I70.211) no longer does.
+`tests/test_reference.py` now checks every fragment against the CMS crosswalk.
 
 ## Evaluation harness
 
@@ -89,14 +163,17 @@ surfaces it in a "discarded by the guardrail" panel rather than hiding it.
   inserted at known offsets. Because every fragment's ground truth is known,
   gold labels fall out by construction — no manual span tagging.
 - `evals/run.py` — scores the pipeline against the gold set: code precision/
-  recall/F1 (exact and category-level), **PHI recall** (the metric that
-  actually matters for de-identification), documentation-gap detection recall
-  and false-positive rate, and confidence calibration.
+  recall/F1 (exact and category-level), **HCC capture** (V28, the level that
+  drives payment), **PHI recall** (the metric that actually matters for
+  de-identification), documentation-gap detection recall and false-positive
+  rate, confidence calibration, and **retrieval recall@k** (is the gold code
+  among the candidates the grounded pass is shown?).
 
 ```bash
-python -m evals.generate                 # writes evals/gold.jsonl
-python -m evals.run --mode mock           # score the offline sample engine
-python -m evals.run --mode auto           # score live Bedrock, if creds resolve
+python -m evals.generate                        # writes evals/gold.jsonl
+python -m evals.run --mode mock                  # score the offline sample engine
+python -m evals.run --mode auto                  # score live Bedrock (grounded), if creds resolve
+python -m evals.run --mode aws --no-grounding    # single-pass baseline for the A/B comparison
 ```
 
 Writes `evals/report.md` and `evals/report.json`.
@@ -120,9 +197,12 @@ against the sample engine on every push/PR.
 - `chartsight/nlp.py` — Bedrock inference, redaction, the sample fallback engine.
 - `chartsight/schema.py` — Pydantic extraction schema (Bedrock tool-use input).
 - `chartsight/guardrail.py` — hallucinated-code guardrail.
+- `chartsight/retrieval.py` — BM25 retrieval over the official code set (RAG grounding).
+- `chartsight/reference.py` — loaders for the ICD-10-CM code set and the CMS-HCC V28 crosswalk.
 - `data/notes.json` — synthetic clinical notes for the UI (no real PHI).
-- `data/icd10cm_valid_codes.txt` — real FY2026 ICD-10-CM code set (guardrail reference data).
-- `scripts/build_icd10_reference.py` — (re)generates the file above from the official CDC source.
+- `data/icd10cm_codes.tsv` — FY2026 ICD-10-CM codes, descriptions, inclusion terms, index entries.
+- `data/hcc_v28.tsv` — CMS-HCC V28 ICD-10 → HCC crosswalk with labels.
+- `scripts/build_reference.py` — (re)generates both data files from the official CDC/CMS sources.
 - `evals/` — fragment library, gold-set generator, and scorer.
 - `tests/` — pytest suite (pipeline smoke test + eval-harness regression tests).
 

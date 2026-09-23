@@ -29,7 +29,8 @@ with st.sidebar:
     st.markdown(
         "1. **De-identify** — detect & redact PHI\n"
         "2. **Code** — infer ICD-10-CM with evidence\n"
-        "3. **Review** — flag HCC documentation gaps"
+        "3. **Ground** — re-select each code from official candidates\n"
+        "4. **Review** — tag V28 HCCs, flag documentation gaps"
     )
     st.divider()
     st.markdown("### Built on AWS")
@@ -72,6 +73,10 @@ with tab_codes:
                 "Condition (evidence)": c["text"],
                 "ICD-10-CM": c["code"],
                 "Description": c["description"],
+                "HCC (V28)": ", ".join(
+                    h["hcc"] + (f" ({h['condition']})" if h["condition"] else "") for h in c["hcc_v28"]
+                )
+                or "—",
                 "Confidence": round(c["confidence"] * 100, 1),
             }
             for c in result["conditions"]
@@ -87,8 +92,27 @@ with tab_codes:
             },
         )
         st.caption(
-            "Each code is linked to the exact text span that supports it — the evidence trail an auditor needs."
+            "Each code is linked to the exact text span that supports it — the evidence trail an auditor needs. "
+            "HCCs come from the official CMS-HCC V28 crosswalk, never from the model."
         )
+
+    if result.get("grounded"):
+        changed = [c for c in result["conditions"] if c.get("first_pass_code") not in (None, c["code"])]
+        with st.expander(f"🔎 Grounding: {len(changed)} code(s) corrected against the official code set"):
+            st.caption(
+                "Each condition's code was re-selected from candidates retrieved from the FY2026 "
+                "ICD-10-CM code set (descriptions, inclusion terms, Alphabetic Index)."
+            )
+            for c in result["conditions"]:
+                arrow = f"`{c['first_pass_code']}` → " if c in changed else ""
+                st.markdown(f"**{c['text']}** — {arrow}`{c['code']}`")
+                st.caption("Candidates: " + ", ".join(f"`{k['code']}`" for k in c.get("candidates", [])))
+
+    ungrounded = result.get("ungrounded") or []
+    if ungrounded:
+        with st.expander(f"❔ {len(ungrounded)} condition(s) with no fitting official code"):
+            for u in ungrounded:
+                st.markdown(f"- {u['text']} (first pass: `{u['code']}`) — {u['reason']}")
 
     rejected = result.get("rejected_codes") or []
     if rejected:

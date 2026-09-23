@@ -29,3 +29,6 @@ env/
 # dataset itself) IS committed so the gold set is reviewable and reproducible.
 evals/report.md
 evals/report.json
+
+# Downloaded source zips for scripts/build_reference.py --cache-dir .cache
+.cache/
