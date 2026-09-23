@@ -17,7 +17,8 @@ the CMS-HCC V28 model:
   1. `text` is phrasing a clinician would actually write.
   2. `codes` are the *most specific* codes that phrasing supports — no more.
   3. `hcc_v28` is the correct HCC category (or () when the code does not
-     risk-adjust, e.g. I10, E78.5).
+     risk-adjust, e.g. I10, E78.5). No longer a manual check: tests/test_reference.py
+     asserts every fragment's hcc_v28 equals the official CMS V28 crosswalk.
   4. `gap` is set when — and only when — the phrasing is genuinely underspecified
      in a way that loses HCC capture, and the matching GAP_RULES entry describes
      the right fix.
@@ -59,8 +60,9 @@ def _c(code: str, description: str) -> ExpectedCode:
 # --------------------------------------------------------------------------- #
 GAP_RULES: dict[str, dict[str, object]] = {
     "hf-unspecified": {
-        "label": "Heart failure coded unspecified (I50.9) — does not risk-adjust.",
-        "fix": "Document systolic/diastolic (or combined) and acute/chronic to reach I50.2x–I50.4x.",
+        "label": "Heart failure coded unspecified (I50.9 -> V28 HCC 226).",
+        "fix": "Document systolic/diastolic (or combined) and acute/chronic for an accurate I50.2x–I50.4x; "
+        "acute and acute-on-chronic map to the higher-weighted HCC 225/224.",
         "condition_terms": ["heart failure", "chf", "i50"],
         "fix_terms": [
             "systolic",
@@ -75,8 +77,9 @@ GAP_RULES: dict[str, dict[str, object]] = {
         ],
     },
     "dm-no-complication": {
-        "label": "Diabetes coded without a linked complication (E11.9).",
-        "fix": "Link the manifestation (neuropathy, CKD, retinopathy) to move to an HCC-eligible E11.x code.",
+        "label": "Diabetes coded without a linked complication (E11.9 -> V28 HCC 38).",
+        "fix": "Link the manifestation (neuropathy, CKD, retinopathy) so the combination E11.x code is "
+        "captured. Coding-accuracy gap: V28 HCCs 36-38 share one coefficient, so no RAF change.",
         "condition_terms": ["diabetes", "diabetic", "e11"],
         "fix_terms": [
             "complication",
@@ -115,16 +118,16 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="dm-unspec",
         text="type 2 diabetes mellitus, poorly controlled",
         codes=(_c("E11.9", "Type 2 diabetes mellitus without complications"),),
-        hcc_v28=(),  # REVIEW: E11.9 does not map to an HCC in V28 (uncomplicated DM was removed).
+        hcc_v28=("HCC38",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         gap="dm-no-complication",
-        note="Uncomplicated T2DM. Gap: no linked manifestation, so no HCC.",
+        note="Uncomplicated T2DM (HCC 38). Gap: no linked manifestation — accuracy, not RAF, under V28.",
         tags=("common", "gap"),
     ),
     Fragment(
         id="dm-polyneuropathy",
         text="type 2 diabetes mellitus with diabetic peripheral neuropathy",
         codes=(_c("E11.42", "Type 2 diabetes mellitus with diabetic polyneuropathy"),),
-        hcc_v28=("HCC38",),  # REVIEW: diabetes with chronic complications
+        hcc_v28=("HCC37",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="Manifestation explicitly linked -> single combination code, HCC-eligible.",
         tags=("common", "multi-manifestation"),
     ),
@@ -135,7 +138,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
             _c("E11.22", "Type 2 diabetes mellitus with diabetic chronic kidney disease"),
             _c("N18.31", "Chronic kidney disease, stage 3a"),
         ),
-        hcc_v28=("HCC38", "HCC329"),  # REVIEW: DM w/ CKD + CKD stage 3
+        hcc_v28=("HCC37", "HCC329"),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="Two codes required: the E11.22 combination code AND the N18 stage code.",
         tags=("multi-code",),
     ),
@@ -143,7 +146,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="dm-hyperglycemia",
         text="type 2 diabetes with hyperglycemia, A1c 9.4%",
         codes=(_c("E11.65", "Type 2 diabetes mellitus with hyperglycemia"),),
-        hcc_v28=("HCC38",),  # REVIEW
+        hcc_v28=("HCC38",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="Hyperglycemia is a documented complication -> E11.65.",
         tags=("common",),
     ),
@@ -152,16 +155,16 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="hf-unspec",
         text="history of congestive heart failure",
         codes=(_c("I50.9", "Heart failure, unspecified"),),
-        hcc_v28=(),  # REVIEW: I50.9 does not risk-adjust
+        hcc_v28=("HCC226",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         gap="hf-unspecified",
-        note="No type, no acuity. Classic specificity gap.",
+        note="No type, no acuity. Specificity gap — still HCC 226, but acuity could reach HCC 224/225.",
         tags=("common", "gap"),
     ),
     Fragment(
         id="hf-chronic-systolic",
         text="chronic systolic congestive heart failure, NYHA class III",
         codes=(_c("I50.22", "Chronic systolic (congestive) heart failure"),),
-        hcc_v28=("HCC226",),  # REVIEW: heart failure HCC
+        hcc_v28=("HCC226",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="Type + acuity documented -> HCC-eligible.",
         tags=("common",),
     ),
@@ -169,8 +172,8 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="hf-acute-on-chronic-diastolic",
         text="acute on chronic diastolic heart failure",
         codes=(_c("I50.33", "Acute on chronic diastolic (congestive) heart failure"),),
-        hcc_v28=("HCC226",),  # REVIEW
-        note="Both acuity states documented -> I50.33.",
+        hcc_v28=("HCC224",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
+        note="Both acuity states documented -> I50.33 (Acute on Chronic HF, HCC 224).",
         tags=(),
     ),
     Fragment(
@@ -179,7 +182,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         codes=(
             _c("I50.42", "Chronic combined systolic (congestive) and diastolic (congestive) heart failure"),
         ),
-        hcc_v28=("HCC226",),  # REVIEW
+        hcc_v28=("HCC226",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=(),
     ),
     # ---- Chronic kidney disease --------------------------------------------- #
@@ -187,7 +190,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="ckd-unspec",
         text="chronic kidney disease",
         codes=(_c("N18.9", "Chronic kidney disease, unspecified"),),
-        hcc_v28=(),  # REVIEW: N18.9 does not risk-adjust
+        hcc_v28=(),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         gap="ckd-no-stage",
         tags=("common", "gap"),
     ),
@@ -195,14 +198,14 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="ckd-3b",
         text="stage 3b chronic kidney disease",
         codes=(_c("N18.32", "Chronic kidney disease, stage 3b"),),
-        hcc_v28=("HCC329",),  # REVIEW: CKD stage 3
+        hcc_v28=("HCC328",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=("common",),
     ),
     Fragment(
         id="ckd-4",
         text="chronic kidney disease stage 4, eGFR 22",
         codes=(_c("N18.4", "Chronic kidney disease, stage 4 (severe)"),),
-        hcc_v28=("HCC328",),  # REVIEW: CKD stage 4
+        hcc_v28=("HCC327",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=(),
     ),
     Fragment(
@@ -212,7 +215,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
             _c("N18.6", "End stage renal disease"),
             _c("Z99.2", "Dependence on renal dialysis"),
         ),
-        hcc_v28=("HCC326",),  # REVIEW: ESRD/dialysis
+        hcc_v28=("HCC326",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="ESRD + dialysis dependence both coded.",
         tags=("multi-code",),
     ),
@@ -221,7 +224,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="copd-stable",
         text="COPD on tiotropium, stable, no recent exacerbations",
         codes=(_c("J44.9", "Chronic obstructive pulmonary disease, unspecified"),),
-        hcc_v28=("HCC280",),  # REVIEW: COPD HCC — confirm J44.9 is included in V28
+        hcc_v28=("HCC280",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         note="Stable COPD with no exacerbation -> J44.9 is correct and complete. No gap.",
         tags=("common",),
     ),
@@ -229,7 +232,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="copd-exacerbation",
         text="chronic obstructive pulmonary disease with acute exacerbation",
         codes=(_c("J44.1", "Chronic obstructive pulmonary disease with (acute) exacerbation"),),
-        hcc_v28=("HCC280",),  # REVIEW
+        hcc_v28=("HCC280",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=("common",),
     ),
     # ---- Arrhythmia ---------------------------------------------------------- #
@@ -237,15 +240,15 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="afib-unspec",
         text="atrial fibrillation on apixaban",
         codes=(_c("I48.91", "Unspecified atrial fibrillation"),),
-        hcc_v28=("HCC238",),  # REVIEW: arrhythmia HCC — confirm I48.91 included in V28
-        note="V28 narrowed the arrhythmia HCC; confirm I48.91 still maps.",
+        hcc_v28=("HCC238",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
+        note="V28 narrowed the arrhythmia HCC, but I48.91 still maps to HCC 238.",
         tags=("common",),
     ),
     Fragment(
         id="afib-chronic",
         text="chronic atrial fibrillation",
         codes=(_c("I48.20", "Chronic atrial fibrillation, unspecified"),),
-        hcc_v28=("HCC238",),  # REVIEW
+        hcc_v28=("HCC238",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=(),
     ),
     # ---- Behavioral health ------------------------------------------------- #
@@ -262,7 +265,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         id="mdd-recurrent-severe",
         text="major depressive disorder, recurrent, severe without psychotic features",
         codes=(_c("F33.2", "Major depressive disorder, recurrent severe without psychotic features"),),
-        hcc_v28=("HCC155",),  # REVIEW: depression HCC
+        hcc_v28=("HCC155",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         tags=(),
     ),
     # ---- Vascular / metabolic ------------------------------------------- #
@@ -275,7 +278,8 @@ FRAGMENTS: tuple[Fragment, ...] = (
                 "Atherosclerosis of native arteries of extremities with intermittent claudication, right leg",
             ),
         ),
-        hcc_v28=("HCC263",),  # REVIEW: vascular disease HCC
+        hcc_v28=(),  # V28 verified against CMS crosswalk (tests/test_reference.py)
+        note="V28 dropped claudication-only atherosclerosis; HCC 263 now requires ulceration or gangrene.",
         tags=("multi-manifestation",),
     ),
     Fragment(
@@ -285,7 +289,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
             _c("E66.01", "Morbid (severe) obesity due to excess calories"),
             _c("Z68.41", "Body mass index [BMI] 40.0-44.9, adult"),
         ),
-        hcc_v28=("HCC48",),  # REVIEW: obesity HCC — confirm V28 and that BMI Z-code is required
+        hcc_v28=("HCC48",),  # V28 verified. REVIEW: confirm the BMI Z-code is expected alongside E66.01
         note="E66.01 + BMI Z-code. BMI code alone does not risk-adjust.",
         tags=("multi-code",),
     ),
