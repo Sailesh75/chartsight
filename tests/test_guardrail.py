@@ -52,3 +52,8 @@ def test_analyze_exposes_rejected_codes_key() -> None:
     result = analyze("Assessment: essential hypertension.", mode="mock")
     assert "rejected_codes" in result
     assert result["rejected_codes"] == []
+
+
+def test_apply_normalizes_undotted_codes_to_the_dotted_form() -> None:
+    result = guardrail.apply([{"text": "a", "code": "e119", "description": "x"}])
+    assert [c["code"] for c in result.verified] == ["E11.9"]
