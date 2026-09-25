@@ -34,7 +34,7 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]  # line length is handled by `ruff format`
-allowed-confusables = ["–", "—"]  # en/em dashes are intentional in clinical text
+allowed-confusables = ["–", "—", "×"]  # en/em dashes and × are intentional in clinical/UI text
 
 [tool.mypy]
 python_version = "3.12"  # matches the dev venv's interpreter; keeps mypy able to parse
