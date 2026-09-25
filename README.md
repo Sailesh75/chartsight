@@ -19,6 +19,7 @@ For each note, the app:
 | **Code** | Extracts each condition, assigns the most specific ICD-10-CM code with a confidence, and returns the exact text span that supports it. |
 | **Ground (RAG)** | Retrieves real candidate codes for each condition from the official FY2026 code set and has the model re-select its code from those candidates only. |
 | **HCC tagging** | Tags every code with its CMS-HCC V28 category straight from the CMS crosswalk. The model never supplies HCCs. |
+| **Risk score** | Computes the patient's V28 risk score (RAF) and shows what documenting each unspecified condition more specifically would be worth. |
 | **Gap review** | Flags documentation-specificity gaps (e.g. unspecified heart failure, diabetes without a linked complication, CKD without a stage). |
 | **Guardrail** | Checks every returned code against the real ICD-10-CM code set; anything hallucinated is discarded before it reaches the UI. |
 
@@ -130,16 +131,23 @@ category code (N18.3 → N18.32), a code that doesn't exist (I73.911 → I70.211
 and a wrong acuity (I50.23 → I50.22). Treat the numbers as directional: the
 set is small and synthetic, and each mode ran once.
 
+The payment impact is smaller than the code-level gain suggests. Scored with
+the RAF calculator below, grounding moves notes with the exact gold RAF from
+51/60 to 54/60, and the mean RAF error from $507 to $475 per member per year.
+Most of its fixes stay inside the same HCC: I50.23 and I50.22 both map to
+HCC 226, so the payment doesn't change.
+
 ### Reference data
 
-Both files are built from official public releases by
-`scripts/build_reference.py` and committed as plain TSV, so fiscal-year updates
-show up as readable diffs:
+All of these are built from official public releases by
+`scripts/build_reference.py` and committed as plain text, so fiscal-year
+updates show up as readable diffs:
 
 | File | Source |
 | --- | --- |
 | `data/icd10cm_codes.tsv` | CDC/NCHS FY2026 ICD-10-CM code descriptions, tabular XML (inclusion terms) and Alphabetic Index XML |
-| `data/hcc_v28.tsv` | ICD-10 → HCC mapping and HCC labels from the CMS-HCC V28 2026 midyear/final model software (the mapping the payment model itself uses, including age edits) |
+| `data/hcc_v28.tsv` | ICD-10 → HCC mapping and HCC labels from the CMS-HCC V28 2026 midyear/final model software (the mapping the payment model itself uses), with CMS's age/sex edits verbatim |
+| `data/cms_hcc_v28/*.csv` | The V28 model's own tables, copied verbatim from the same package: relative factors, hierarchies, diagnosis categories, interactions |
 
 ```bash
 python scripts/build_reference.py --cache-dir .cache   # refresh for a new year (update URLs first)
@@ -150,6 +158,50 @@ first version of the eval fragment library had wrong V28 HCCs for 9 of 26
 fragments. Examples: E11.9 and I50.9 *do* risk-adjust under V28 (HCC 38 and
 HCC 226), and claudication-only PAD (I70.211) no longer does.
 `tests/test_reference.py` now checks every fragment against the CMS crosswalk.
+
+## Risk score (RAF) and what a gap is worth
+
+`chartsight/raf.py` computes the CMS-HCC V28 risk score the way CMS's own
+PY2026 model software does: ICD-10 → HCC with age/sex edits, the HCC 223
+recode, hierarchies, demographic cell, originally-disabled and LTI-Medicaid
+terms, interactions (Diabetes x HF, HF x Kidney, …) and the payment-HCC count
+term, for all seven segments.
+
+**It matches CMS exactly.** `tests/fixtures/cms_v28_reference_scores.json`
+holds scores produced by running CMS's software on 14 synthetic beneficiaries.
+They exercise hierarchies, interactions, the 10+ HCC count term, age-split
+cancer mappings, originally-disabled and institutional cases, and the HCC 223
+recode. `tests/test_raf.py` asserts all 98 scores (14 × 7 segments) are
+identical.
+
+The payment RAF applies the CY2026 Rate Announcement adjustments: normalization
+factor **1.067** and the **5.9%** MA coding-pattern adjustment. Dollars use the
+CY2026 national FFS USPCC (**$1,230.52** PMPM) as an illustrative base rate. A
+plan's real revenue depends on its county benchmarks and bid, so the app lets
+you set your own rate.
+
+**Documentation opportunities.** For each unspecified code, every more
+specific sibling code is scored for the whole patient, so hierarchies,
+interactions and count terms all count. For example, staging CKD is worth more
+when heart failure is also present, because of the HF x Kidney interaction.
+Two rules keep the numbers honest:
+
+- **Same condition only.** A candidate code only counts if its HCCs stay
+  within the documented condition's HCC family, meaning the connected chain in
+  CMS's hierarchy table. E11.9 → E11.52 adds HCC 263 (gangrene), which is a
+  different diagnosis, not a more specific diabetes, so it isn't offered.
+- **Ranges, not an "up to" headline.** Unspecified heart failure shows $0 for
+  every acuity and a large figure only for end-stage heart failure. The UI
+  presents the full range and what each outcome requires.
+
+The calculator also corrected the project's own gap text. Under V28, **linking a diabetes complication is worth $0** (HCCs 36–38
+share one coefficient), and **heart-failure acuity is worth $0** (HCCs 224–226
+share one coefficient in every segment). Both are still worth documenting for
+coding accuracy, and the gap text now says so. The real money is in
+**staging CKD** and **documenting depression severity**.
+
+Use this to prioritize provider queries. A code is justified only by what the
+record supports, never by what it pays.
 
 ## Evaluation harness
 
@@ -166,8 +218,9 @@ HCC 226), and claudication-only PAD (I70.211) no longer does.
   recall/F1 (exact and category-level), **HCC capture** (V28, the level that
   drives payment), **PHI recall** (the metric that actually matters for
   de-identification), documentation-gap detection recall and false-positive
-  rate, confidence calibration, and **retrieval recall@k** (is the gold code
-  among the candidates the grounded pass is shown?).
+  rate, confidence calibration, **retrieval recall@k** (is the gold code
+  among the candidates the grounded pass is shown?), and **payment accuracy**
+  (the RAF implied by predicted vs. gold codes, in RAF and dollars).
 
 ```bash
 python -m evals.generate                        # writes evals/gold.jsonl
@@ -199,9 +252,11 @@ against the sample engine on every push/PR.
 - `chartsight/guardrail.py` — hallucinated-code guardrail.
 - `chartsight/retrieval.py` — BM25 retrieval over the official code set (RAG grounding).
 - `chartsight/reference.py` — loaders for the ICD-10-CM code set and the CMS-HCC V28 crosswalk.
+- `chartsight/raf.py` — CMS-HCC V28 risk score and documentation-opportunity valuation.
 - `data/notes.json` — synthetic clinical notes for the UI (no real PHI).
 - `data/icd10cm_codes.tsv` — FY2026 ICD-10-CM codes, descriptions, inclusion terms, index entries.
-- `data/hcc_v28.tsv` — CMS-HCC V28 ICD-10 → HCC crosswalk with labels.
+- `data/hcc_v28.tsv` — CMS-HCC V28 ICD-10 → HCC crosswalk with labels and age/sex edits.
+- `data/cms_hcc_v28/` — V28 model tables (relative factors, hierarchies, categories, interactions).
 - `scripts/build_reference.py` — (re)generates both data files from the official CDC/CMS sources.
 - `evals/` — fragment library, gold-set generator, and scorer.
 - `tests/` — pytest suite (pipeline smoke test + eval-harness regression tests).
