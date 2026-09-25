@@ -1,5 +1,6 @@
-"""Score the pipeline against the gold set: code P/R/F1, HCC capture, PHI recall,
-documentation-gap detection, confidence calibration, and retrieval recall.
+"""Score the pipeline against the gold set: code P/R/F1, HCC capture, payment (RAF)
+accuracy, PHI recall, documentation-gap detection, confidence calibration, and
+retrieval recall.
 
 Usage:
     python -m evals.run --mode mock                    # local rule engine (no AWS needed)
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from chartsight import reference
+from chartsight import raf, reference
 from chartsight.nlp import analyze
 from chartsight.retrieval import default_retriever
 from evals.fragments import GAP_RULES
@@ -66,6 +67,11 @@ class Report:
     grounded_notes: int = 0  # notes where grounding actually ran (Bedrock only; sample engine is rule-based)
     grounding_changed: int = 0  # grounded pass picked a different code than the first pass
     ungrounded: int = 0  # grounded pass answered NONE
+    # Payment accuracy: per-note payment RAF from predicted vs gold codes (same demographics).
+    raf_gold_total: float = 0.0
+    raf_pred_total: float = 0.0
+    raf_abs_error_total: float = 0.0
+    raf_exact_notes: int = 0  # notes whose predicted RAF equals the gold RAF
     gap_expected: int = 0
     gap_addressed: int = 0
     gap_false_positive_notes: int = 0
@@ -166,6 +172,19 @@ def _score_retrieval(text: str, gold_conditions: list[dict[str, Any]], report: R
                 hits[k] += g["code"] in ranked[:k]
 
 
+def _score_raf(
+    text: str, gold_conditions: list[dict[str, Any]], pred_conditions: list[dict[str, Any]], report: Report
+) -> None:
+    """What the coding errors cost: the payment RAF the prediction implies vs. the gold RAF."""
+    demo = raf.parse_demographics(text)
+    gold = raf.score([c["code"] for c in gold_conditions], demo).payment
+    pred = raf.score([c["code"] for c in pred_conditions], demo).payment
+    report.raf_gold_total += gold
+    report.raf_pred_total += pred
+    report.raf_abs_error_total += abs(pred - gold)
+    report.raf_exact_notes += round(pred, 3) == round(gold, 3)
+
+
 def _score_phi(gold_phi: list[dict[str, Any]], pred_phi: list[dict[str, Any]], report: Report) -> None:
     matched_pred: set[int] = set()
     for g in gold_phi:
@@ -222,6 +241,7 @@ def run(gold_path: Path, mode: str, limit: int | None, grounded: bool = True) ->
         _score_phi(gold["phi"], pred["phi"], report)
         _score_gaps(gold["expected_gap_keys"], pred["insights"]["gaps"], report)
         _score_retrieval(gold["text"], gold["conditions"], report)
+        _score_raf(gold["text"], gold["conditions"], pred["conditions"], report)
         report.grounded_notes += bool(pred.get("grounded"))
         report.grounding_changed += sum(
             1 for c in pred["conditions"] if c.get("first_pass_code", c["code"]) != c["code"]
@@ -253,6 +273,8 @@ def render_markdown(report: Report, mode: str, grounded: bool = True) -> str:
         grounding = f"on ({report.grounded_notes}/{report.n_notes} notes)"
     else:
         grounding = "not applied (rule-based sample engine)"
+    mean_raf_error = report.raf_abs_error_total / report.n_notes if report.n_notes else 0.0
+    raf_capture = report.raf_pred_total / report.raf_gold_total if report.raf_gold_total else 0.0
     lines = [
         "# ChartSight eval report",
         "",
@@ -284,6 +306,16 @@ def render_markdown(report: Report, mode: str, grounded: bool = True) -> str:
         "",
         f"- Grounded pass changed the first-pass code: **{report.grounding_changed}** conditions; "
         f"answered NONE (dropped): **{report.ungrounded}**",
+        "",
+        "## Payment accuracy (CMS-HCC V28 RAF)",
+        "",
+        "Per-note payment RAF implied by the predicted codes vs. the gold codes (same demographics, "
+        "community non-dual aged, CY2026 normalization + coding-pattern adjustment).",
+        "",
+        f"- Notes with the exact gold RAF: **{report.raf_exact_notes}/{report.n_notes}**",
+        f"- Mean absolute RAF error: **{mean_raf_error:.3f}** "
+        f"(~${mean_raf_error * raf.USPCC_PMPM * 12:,.0f} per member per year at the national USPCC)",
+        f"- RAF captured vs. gold: **{raf_capture:.1%}** (>100% = over-coding, <100% = under-coding)",
         "",
         "## PHI redaction",
         "",
@@ -356,6 +388,13 @@ def main() -> None:
                 },
                 "grounding_changed": report.grounding_changed,
                 "ungrounded": report.ungrounded,
+                "raf": {
+                    "exact_notes": report.raf_exact_notes,
+                    "mean_abs_error": report.raf_abs_error_total / report.n_notes if report.n_notes else 0.0,
+                    "capture": report.raf_pred_total / report.raf_gold_total
+                    if report.raf_gold_total
+                    else 0.0,
+                },
                 "phi": vars(report.phi),
                 "gap_recall": report.gap_recall,
                 "gap_false_positive_rate": report.gap_false_positive_rate,

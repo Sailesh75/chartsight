@@ -61,8 +61,8 @@ def _c(code: str, description: str) -> ExpectedCode:
 GAP_RULES: dict[str, dict[str, object]] = {
     "hf-unspecified": {
         "label": "Heart failure coded unspecified (I50.9 -> V28 HCC 226).",
-        "fix": "Document systolic/diastolic (or combined) and acute/chronic for an accurate I50.2x–I50.4x; "
-        "acute and acute-on-chronic map to the higher-weighted HCC 225/224.",
+        "fix": "Document systolic/diastolic (or combined) and acute/chronic for an accurate I50.2x–I50.4x. "
+        "Coding-accuracy gap: V28 HCCs 224-226 share one coefficient, so acuity doesn't change RAF.",
         "condition_terms": ["heart failure", "chf", "i50"],
         "fix_terms": [
             "systolic",
@@ -157,7 +157,7 @@ FRAGMENTS: tuple[Fragment, ...] = (
         codes=(_c("I50.9", "Heart failure, unspecified"),),
         hcc_v28=("HCC226",),  # V28 verified against CMS crosswalk (tests/test_reference.py)
         gap="hf-unspecified",
-        note="No type, no acuity. Specificity gap — still HCC 226, but acuity could reach HCC 224/225.",
+        note="No type, no acuity. Specificity gap — still HCC 226; acuity maps to 224/225 at the same weight.",
         tags=("common", "gap"),
     ),
     Fragment(
