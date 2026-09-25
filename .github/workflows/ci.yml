@@ -42,3 +42,33 @@ jobs:
           path: |
             evals/report.md
             evals/report.json
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API and UI images
+        run: |
+          docker build --target api -t chartsight-api .
+          docker build --target ui -t chartsight-ui .
+
+      - name: Smoke-test the API container (sample engine, no AWS)
+        run: |
+          docker run -d --name api -p 8000:8000 -e CHARTSIGHT_API_KEY=ci-key chartsight-api
+          for i in $(seq 1 30); do curl -fs localhost:8000/health && break; sleep 1; done
+          curl -fs localhost:8000/health
+          # auth is enforced ...
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/v1/analyze \
+            -H 'content-type: application/json' -d '{"text":"x"}')" = "401"
+          # ... and a real request works end to end
+          curl -fs -X POST localhost:8000/v1/analyze -H 'X-API-Key: ci-key' \
+            -H 'content-type: application/json' \
+            -d '{"text":"Assessment: 72-year-old male with chronic kidney disease.","mode":"mock"}' \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['conditions'][0]['code']=='N18.9', d; print('RAF', d['raf']['payment'])"
+          test "$(docker inspect -f '{{.Config.User}}' chartsight-api)" = "chartsight"
+
+      - name: Container logs
+        if: always()
+        run: docker logs api || true

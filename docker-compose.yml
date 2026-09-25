@@ -1,0 +1,32 @@
+# API + UI:   docker compose up --build   ->  UI http://localhost:8501, API docs http://localhost:8000/docs
+#
+# Without AWS credentials both run on the local sample engine. For live Bedrock, the API
+# container reads your AWS config read-only from ~/.aws. Pick a profile with AWS_PROFILE,
+# e.g. `AWS_PROFILE=chartsight docker compose up`.
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "8000:8000"
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}
+      CHARTSIGHT_API_KEY: ${CHARTSIGHT_API_KEY:-}
+    volumes:
+      - ~/.aws:/home/chartsight/.aws:ro
+
+  ui:
+    build:
+      context: .
+      target: ui
+    ports:
+      - "8501:8501"
+    environment:
+      CHARTSIGHT_API_URL: http://api:8000
+      CHARTSIGHT_API_KEY: ${CHARTSIGHT_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
