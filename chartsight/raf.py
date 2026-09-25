@@ -32,11 +32,10 @@ import csv
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
-from pathlib import Path
 
 from chartsight import reference
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "data" / "cms_hcc_v28"
+MODEL_DIR = reference.DATA_DIR / "cms_hcc_v28"
 
 # CY2026 Rate Announcement (CMS, April 2025), https://www.cms.gov/files/document/2026-announcement.pdf
 NORMALIZATION_FACTOR = 1.067  # "2024 CMS-HCC Part C Model: 1.067"

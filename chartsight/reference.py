@@ -13,13 +13,16 @@ see that script for provenance and how to refresh them for a new year.
 from __future__ import annotations
 
 import operator
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# The repo's data/ by default; CHARTSIGHT_DATA_DIR points an installed package (e.g. the
+# Docker image) at a copy elsewhere. Every module resolves data through this one constant.
+DATA_DIR = Path(os.environ.get("CHARTSIGHT_DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
 CODES_PATH = DATA_DIR / "icd10cm_codes.tsv"
 HCC_PATH = DATA_DIR / "hcc_v28.tsv"
 
@@ -89,6 +92,11 @@ def _split_terms(cols: list[str], i: int) -> tuple[str, ...]:
 
 
 def _data_lines(path: Path) -> list[list[str]]:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Point CHARTSIGHT_DATA_DIR at the repo's data/ directory "
+            "(needed when chartsight is installed rather than run from a checkout)."
+        )
     lines = path.read_text(encoding="utf-8").splitlines()
     return [line.split("\t") for line in lines if line and not line.startswith("#")]
 

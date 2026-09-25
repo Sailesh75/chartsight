@@ -30,15 +30,13 @@ from __future__ import annotations
 import json
 import os
 import re
-from pathlib import Path
 from typing import Any
 
 from chartsight import guardrail, raf, reference
 from chartsight.retrieval import Candidate, default_retriever
 from chartsight.schema import AnalysisExtraction
 
-PKG_DIR = Path(__file__).resolve().parent
-DATA_DIR = PKG_DIR.parent / "data"
+DATA_DIR = reference.DATA_DIR
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
@@ -410,7 +408,14 @@ def _with_hcc(condition: dict[str, Any]) -> dict[str, Any]:
     return {**condition, "hcc_v28": hcc}
 
 
-def analyze(text: str, mode: str = "auto", grounded: bool = True) -> dict[str, Any]:
+def analyze(
+    text: str,
+    mode: str = "auto",
+    grounded: bool = True,
+    demographics: raf.Demographics | None = None,
+    segment: str = raf.DEFAULT_SEGMENT,
+    base_rate_pmpm: float = raf.USPCC_PMPM,
+) -> dict[str, Any]:
     """Run the full pipeline.
 
     mode="auto" -> Amazon Bedrock if credentials resolve, else the sample engine.
@@ -420,6 +425,9 @@ def analyze(text: str, mode: str = "auto", grounded: bool = True) -> dict[str, A
     grounded=True  -> Bedrock codes are re-selected from retrieved official candidates (two calls).
     grounded=False -> single-pass, the model codes from memory (kept for A/B evaluation).
     The sample engine is rule-based and unaffected.
+
+    demographics / segment / base_rate_pmpm feed the RAF step; demographics default to what
+    the note documents (e.g. "68-year-old male"), else flagged assumptions.
     """
     use_aws = mode == "aws" or (mode == "auto" and aws_available())
     engine = f"Amazon Bedrock · {MODEL_LABEL}" + (" · grounded" if grounded else "")
@@ -449,8 +457,13 @@ def analyze(text: str, mode: str = "auto", grounded: bool = True) -> dict[str, A
     # both engines uniformly, outside the AWS try/except above so a guardrail issue is
     # never mistaken for "Bedrock unavailable".
     checked = guardrail.apply(conditions)
-    # RAF is scored on verified codes only, with demographics as documented in the note.
-    risk = raf.assess([c["code"] for c in checked.verified], raf.parse_demographics(text))
+    # RAF is scored on verified codes only.
+    risk = raf.assess(
+        [c["code"] for c in checked.verified],
+        demographics or raf.parse_demographics(text),
+        segment,
+        base_rate_pmpm,
+    )
 
     return {
         "engine": engine,
