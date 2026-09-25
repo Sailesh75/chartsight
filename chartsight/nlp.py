@@ -16,6 +16,8 @@ Pipeline for a single clinical note:
   * HCC enrichment   -> each verified code is tagged with its CMS-HCC V28
     category by crosswalk lookup (chartsight.reference) — deterministic, never
     model output.
+  * RAF              -> the patient's CMS-HCC V28 risk score and the dollar value
+    of documenting each unspecified condition more specifically (chartsight.raf).
 
 Two tiers keep the demo alive:
   * Bedrock - live Amazon Bedrock (Claude) when AWS credentials resolve.
@@ -31,7 +33,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from chartsight import guardrail, reference
+from chartsight import guardrail, raf, reference
 from chartsight.retrieval import Candidate, default_retriever
 from chartsight.schema import AnalysisExtraction
 
@@ -373,8 +375,9 @@ def _sample_gaps(conditions: list[dict[str, Any]]) -> list[str]:
     if "I50.9" in codes:
         gaps.append(
             "**Heart failure** is coded as unspecified (I50.9 → V28 HCC 226). Document the type "
-            "(systolic/diastolic) and acuity (acute/chronic) for an accurate I50.2x–I50.4x code; acute and "
-            "acute-on-chronic failure map to the higher-weighted HCC 225/224."
+            "(systolic/diastolic) and acuity (acute/chronic) for an accurate I50.2x–I50.4x code. Under V28 "
+            "this is a coding-accuracy gap: HCCs 224–226 share one coefficient, so acuity doesn't change "
+            "the RAF — only documented end-stage heart failure (HCC 222) does."
         )
     if "N18.9" in codes:
         gaps.append(
@@ -446,6 +449,8 @@ def analyze(text: str, mode: str = "auto", grounded: bool = True) -> dict[str, A
     # both engines uniformly, outside the AWS try/except above so a guardrail issue is
     # never mistaken for "Bedrock unavailable".
     checked = guardrail.apply(conditions)
+    # RAF is scored on verified codes only, with demographics as documented in the note.
+    risk = raf.assess([c["code"] for c in checked.verified], raf.parse_demographics(text))
 
     return {
         "engine": engine,
@@ -457,5 +462,6 @@ def analyze(text: str, mode: str = "auto", grounded: bool = True) -> dict[str, A
         "conditions": [_with_hcc(c) for c in checked.verified],
         "rejected_codes": checked.rejected,
         "ungrounded": ungrounded,
+        "raf": risk,
         "insights": {"engine": engine, "gaps": gaps},
     }
