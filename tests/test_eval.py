@@ -63,3 +63,17 @@ def test_scorer_reports_hcc_and_retrieval_metrics(tmp_path) -> None:  # type: ig
     assert report.retrieval_total > 0
     assert report.retrieval_hits_oracle[10] >= report.retrieval_hits_oracle[1]
     assert report.grounded_notes == 0  # sample engine never grounds
+
+
+def test_scorer_reports_payment_accuracy(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    gold_path = tmp_path / "gold.jsonl"
+    with gold_path.open("w", encoding="utf-8") as fh:
+        for note in generate(seed=5, count=8):
+            fh.write(json.dumps(note) + "\n")
+
+    report = run(gold_path, mode="mock", limit=8)
+    assert report.raf_gold_total > 0
+    assert 0 <= report.raf_exact_notes <= report.n_notes
+    assert report.raf_abs_error_total >= abs(report.raf_pred_total - report.raf_gold_total) - 1e-9
