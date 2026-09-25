@@ -3,7 +3,10 @@ from __future__ import annotations
 import streamlit as st
 
 from chartsight import raf
-from chartsight.nlp import MODEL_LABEL, REGION, analyze, load_notes
+from chartsight.client import get_backend
+from chartsight.nlp import MODEL_LABEL, REGION, load_notes
+
+backend = get_backend()  # the ChartSight API if CHARTSIGHT_API_URL is set, else in-process
 
 st.set_page_config(page_title="Clinical Documentation Intelligence", page_icon="🩺", layout="wide")
 
@@ -53,6 +56,7 @@ with st.sidebar:
     st.divider()
     st.markdown("### Built on AWS")
     st.markdown(f"- Amazon Bedrock\n- {MODEL_LABEL}")
+    st.caption(f"Backend: {backend.label}")
 
 # --- input ------------------------------------------------------------------ #
 notes = load_notes()
@@ -62,7 +66,7 @@ text = st.text_area("Clinical note (editable — paste your own)", value=labels[
 
 if st.button("Analyze note", type="primary"):
     with st.spinner("Analyzing…"):
-        st.session_state["result"] = analyze(text)
+        st.session_state["result"] = backend.analyze(text)
 
 result = st.session_state.get("result")
 if not result:
@@ -80,7 +84,7 @@ demo = (
     if override
     else raf.Demographics(**{k: v for k, v in result["raf"]["demographics"].items() if k != "label"})
 )
-risk = raf.assess([c["code"] for c in result["conditions"]], demo, segment, base_rate)
+risk = backend.assess([c["code"] for c in result["conditions"]], demo, segment, base_rate)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("PHI entities redacted", len(result["phi"]))
