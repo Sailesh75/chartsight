@@ -1,6 +1,6 @@
 """Build the reference data the pipeline grounds itself on, from official public releases.
 
-Outputs (both committed, both plain TSV so diffs across fiscal years are readable):
+Outputs (all committed, all plain text so diffs across fiscal years are readable):
 
   data/icd10cm_codes.tsv   code <TAB> description <TAB> inclusion terms <TAB> index terms
       Every billable FY2026 ICD-10-CM code (CDC/NCHS "Code Descriptions" file),
@@ -14,10 +14,18 @@ Outputs (both committed, both plain TSV so diffs across fiscal years are readabl
           clinical phrasing lives.
       This is the retrieval corpus (chartsight.retrieval) and the guardrail's code set.
 
-  data/hcc_v28.tsv         code <TAB> HCC <TAB> HCC label <TAB> age/sex condition
+  data/hcc_v28.tsv         code <TAB> HCC <TAB> label <TAB> age edit <TAB> sex edit <TAB> MCE age edit
       The ICD-10 → HCC mapping from the CMS-HCC V28 2026 midyear/final model
       software (the mapping the payment model itself uses), with labels from the
-      same package. Codes absent from this file do not risk-adjust under V28.
+      same package. The three edit columns are CMS's own conditions, verbatim
+      (e.g. "age < 50"; sex 1 = male, 2 = female): a mapping applies only when
+      every non-empty edit holds. Codes absent from this file do not risk-adjust.
+
+  data/cms_hcc_v28/*.csv   the V28 payment model's own tables, copied verbatim
+      from the same package: relative factors (coefficients) for continuing
+      enrollees, HCC hierarchies, diagnosis categories and interactions. These
+      drive chartsight.raf, which is tested against scores produced by the CMS
+      software itself (tests/fixtures/cms_v28_reference_scores.json).
 
 Re-run to refresh for a new fiscal year (update the URLs):
     python scripts/build_reference.py [--cache-dir DIR]
@@ -47,6 +55,13 @@ V28_INTERNAL = "software/CMS_HCC_v28/data/input/internal"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 CODES_OUT = DATA_DIR / "icd10cm_codes.tsv"
 HCC_OUT = DATA_DIR / "hcc_v28.tsv"
+MODEL_OUT = DATA_DIR / "cms_hcc_v28"
+MODEL_TABLES = (
+    "V28_CE_Relative_Factors.csv",
+    "V28_HCC_Hierarchies.csv",
+    "V28_Diagnosis_Categories.csv",
+    "V28_Interactions.csv",
+)
 
 
 def _dotted(raw_code: str) -> str:
@@ -128,26 +143,32 @@ def load_index_terms(cache_dir: Path | None) -> dict[str, list[str]]:
     return terms
 
 
-def load_v28(cache_dir: Path | None) -> list[tuple[str, str, str, str]]:
+def load_v28(cache_dir: Path | None) -> tuple[list[tuple[str, ...]], dict[str, bytes]]:
+    """(crosswalk rows, {model table name: verbatim bytes}) from the V28 model software."""
     package = _member(_fetch(V28_URL, cache_dir), V28_PACKAGE)
     mapping_csv = _member(package, f"{V28_INTERNAL}/ICD10_CC_mappings_CMS_HCC_2026_v28.csv")
-    factors_csv = _member(package, f"{V28_INTERNAL}/V28_CE_Relative_Factors.csv")
+    tables = {name: _member(package, f"{V28_INTERNAL}/{name}") for name in MODEL_TABLES}
 
     labels = {
         row["Variable"]: row["Label"].strip()
-        for row in csv.DictReader(io.StringIO(factors_csv.decode("utf-8-sig")))
+        for row in csv.DictReader(io.StringIO(tables["V28_CE_Relative_Factors.csv"].decode("utf-8-sig")))
         if row["Variable"].startswith("HCC")
     }
-    rows: list[tuple[str, str, str, str]] = []
+    rows: list[tuple[str, ...]] = []
     for row in csv.DictReader(io.StringIO(mapping_csv.decode("utf-8-sig"))):
         hcc = f"HCC{int(float(row['CC']))}"
-        conditions = [
-            f"{field.split('_')[0].lower()}: {row[field].strip()}"
-            for field in ("AGE_EDIT_CONDITION", "SEX_EDIT_CONDITION", "MCE_AGE_CONDITION")
-            if row.get(field, "").strip()
-        ]
-        rows.append((_dotted(row["ICD10"]), hcc, labels.get(hcc, ""), "; ".join(conditions)))
-    return rows
+        sex = row.get("SEX_EDIT_CONDITION", "").strip()
+        rows.append(
+            (
+                _dotted(row["ICD10"]),
+                hcc,
+                labels.get(hcc, ""),
+                row.get("AGE_EDIT_CONDITION", "").strip(),
+                str(int(float(sex))) if sex else "",
+                row.get("MCE_AGE_CONDITION", "").strip(),
+            )
+        )
+    return rows, tables
 
 
 def _clean(text: str) -> str:
@@ -165,7 +186,7 @@ def main() -> None:
         sys.exit(1)
     inclusion = load_inclusion_terms(args.cache_dir)
     index = load_index_terms(args.cache_dir)
-    v28 = load_v28(args.cache_dir)
+    v28, model_tables = load_v28(args.cache_dir)
 
     DATA_DIR.mkdir(exist_ok=True)
     with_terms = with_index = 0
@@ -187,17 +208,22 @@ def main() -> None:
     )
     print(f"wrote {len(code_lines)} codes ({with_terms} w/ inclusion, {with_index} w/ index) -> {CODES_OUT}")
 
-    unknown = sorted({code for code, *_ in v28 if code not in descriptions})
+    unknown = sorted({row[0] for row in v28 if row[0] not in descriptions})
     if unknown:
         print(f"warning: {len(unknown)} V28 codes not in the FY2026 code set, e.g. {unknown[:5]}")
-    hcc_lines = [f"{code}\t{hcc}\t{_clean(label)}\t{cond}" for code, hcc, label, cond in sorted(v28)]
+    hcc_lines = ["\t".join((code, hcc, _clean(label), *edits)) for code, hcc, label, *edits in sorted(v28)]
     HCC_OUT.write_text(
         f"# CMS-HCC V28 ICD-10 -> HCC crosswalk, 2026 midyear/final model software — source: {V28_URL}\n"
-        f"# {len(hcc_lines)} mappings. Columns: code, HCC, label, age/sex condition. "
-        "Regenerate with scripts/build_reference.py\n" + "\n".join(hcc_lines) + "\n",
+        f"# {len(hcc_lines)} mappings. Columns: code, HCC, label, age edit, sex edit (1=M, 2=F), "
+        "MCE age edit. Regenerate with scripts/build_reference.py\n" + "\n".join(hcc_lines) + "\n",
         encoding="utf-8",
     )
     print(f"wrote {len(hcc_lines)} V28 mappings -> {HCC_OUT}")
+
+    MODEL_OUT.mkdir(exist_ok=True)
+    for name, raw in model_tables.items():
+        (MODEL_OUT / name).write_bytes(raw)
+    print(f"wrote {len(model_tables)} V28 model tables -> {MODEL_OUT}")
 
 
 if __name__ == "__main__":

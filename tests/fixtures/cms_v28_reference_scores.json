@@ -1,0 +1,362 @@
+{
+ "source": "Scores produced by the official CMS-HCC V28 PY2026 midyear/final Python model software (CMS_HCC_v28_2026_T_package_v3, transform.py, switch_edits=True) on these synthetic beneficiaries. Continuing-enrollee raw scores, rounded to 3 dp by CMS; ages as of the 2026-02-01 cutoff.",
+ "beneficiaries": [
+  {
+   "id": 1,
+   "age": 71,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [],
+   "hccs": [],
+   "scores": {
+    "COMMUNITY_NA": 0.395,
+    "COMMUNITY_PBA": 0.423,
+    "COMMUNITY_FBA": 0.506,
+    "COMMUNITY_ND": 0.0,
+    "COMMUNITY_PBD": 0.0,
+    "COMMUNITY_FBD": 0.0,
+    "INSTITUTIONAL": 1.119
+   }
+  },
+  {
+   "id": 2,
+   "age": 68,
+   "sex": 1,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "E119",
+    "I509"
+   ],
+   "hccs": [
+    "HCC226",
+    "HCC38"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 0.97,
+    "COMMUNITY_PBA": 1.016,
+    "COMMUNITY_FBA": 1.306,
+    "COMMUNITY_ND": 0.656,
+    "COMMUNITY_PBD": 0.674,
+    "COMMUNITY_FBD": 0.813,
+    "INSTITUTIONAL": 1.981
+   }
+  },
+  {
+   "id": 3,
+   "age": 80,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "I5023",
+    "I509",
+    "N184",
+    "J449"
+   ],
+   "hccs": [
+    "HCC224",
+    "HCC280",
+    "HCC327"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.971,
+    "COMMUNITY_PBA": 1.94,
+    "COMMUNITY_FBA": 2.329,
+    "COMMUNITY_ND": 1.55,
+    "COMMUNITY_PBD": 1.528,
+    "COMMUNITY_FBD": 1.996,
+    "INSTITUTIONAL": 1.998
+   }
+  },
+  {
+   "id": 4,
+   "age": 75,
+   "sex": 1,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "E1122",
+    "I5022",
+    "N1832",
+    "J449",
+    "I4891",
+    "F332",
+    "E6601",
+    "C3490",
+    "G20A1",
+    "M0579",
+    "L89154",
+    "F1020",
+    "J9610",
+    "G309"
+   ],
+   "hccs": [
+    "HCC127",
+    "HCC139",
+    "HCC155",
+    "HCC199",
+    "HCC20",
+    "HCC213",
+    "HCC226",
+    "HCC238",
+    "HCC280",
+    "HCC328",
+    "HCC37",
+    "HCC379",
+    "HCC48",
+    "HCC93"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 8.969,
+    "COMMUNITY_PBA": 9.531,
+    "COMMUNITY_FBA": 10.855,
+    "COMMUNITY_ND": 9.161,
+    "COMMUNITY_PBD": 9.065,
+    "COMMUNITY_FBD": 10.58,
+    "INSTITUTIONAL": 7.083
+   }
+  },
+  {
+   "id": 5,
+   "age": 45,
+   "sex": 2,
+   "orec": 1,
+   "ltimcaid": 0,
+   "icd10": [
+    "I5022",
+    "J449"
+   ],
+   "hccs": [
+    "HCC226",
+    "HCC280"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 0.757,
+    "COMMUNITY_PBA": 0.772,
+    "COMMUNITY_FBA": 0.905,
+    "COMMUNITY_ND": 1.053,
+    "COMMUNITY_PBD": 1.157,
+    "COMMUNITY_FBD": 1.299,
+    "INSTITUTIONAL": 2.471
+   }
+  },
+  {
+   "id": 6,
+   "age": 70,
+   "sex": 2,
+   "orec": 1,
+   "ltimcaid": 0,
+   "icd10": [
+    "I10"
+   ],
+   "hccs": [],
+   "scores": {
+    "COMMUNITY_NA": 0.623,
+    "COMMUNITY_PBA": 0.526,
+    "COMMUNITY_FBA": 0.666,
+    "COMMUNITY_ND": 0.0,
+    "COMMUNITY_PBD": 0.0,
+    "COMMUNITY_FBD": 0.0,
+    "INSTITUTIONAL": 1.119
+   }
+  },
+  {
+   "id": 7,
+   "age": 46,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "C50011"
+   ],
+   "hccs": [
+    "HCC22"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 0.363,
+    "COMMUNITY_PBA": 0.41,
+    "COMMUNITY_FBA": 0.382,
+    "COMMUNITY_ND": 0.706,
+    "COMMUNITY_PBD": 0.755,
+    "COMMUNITY_FBD": 0.793,
+    "INSTITUTIONAL": 1.345
+   }
+  },
+  {
+   "id": 8,
+   "age": 70,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "C50011"
+   ],
+   "hccs": [
+    "HCC23"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 0.581,
+    "COMMUNITY_PBA": 0.626,
+    "COMMUNITY_FBA": 0.702,
+    "COMMUNITY_ND": 0.233,
+    "COMMUNITY_PBD": 0.237,
+    "COMMUNITY_FBD": 0.218,
+    "INSTITUTIONAL": 1.316
+   }
+  },
+  {
+   "id": 9,
+   "age": 85,
+   "sex": 1,
+   "orec": 0,
+   "ltimcaid": 1,
+   "icd10": [
+    "E119",
+    "G309",
+    "I639"
+   ],
+   "hccs": [
+    "HCC127",
+    "HCC249",
+    "HCC38"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.41,
+    "COMMUNITY_PBA": 1.481,
+    "COMMUNITY_FBA": 1.908,
+    "COMMUNITY_ND": 0.667,
+    "COMMUNITY_PBD": 0.727,
+    "COMMUNITY_FBD": 0.879,
+    "INSTITUTIONAL": 1.626
+   }
+  },
+  {
+   "id": 10,
+   "age": 66,
+   "sex": 1,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "E1122",
+    "N1832",
+    "I5022",
+    "F332",
+    "E6601"
+   ],
+   "hccs": [
+    "HCC155",
+    "HCC226",
+    "HCC328",
+    "HCC37",
+    "HCC48"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.808,
+    "COMMUNITY_PBA": 1.745,
+    "COMMUNITY_FBA": 2.281,
+    "COMMUNITY_ND": 1.547,
+    "COMMUNITY_PBD": 1.511,
+    "COMMUNITY_FBD": 1.813,
+    "INSTITUTIONAL": 2.767
+   }
+  },
+  {
+   "id": 11,
+   "age": 75,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "Z95811",
+    "E119"
+   ],
+   "hccs": [
+    "HCC38"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 0.631,
+    "COMMUNITY_PBA": 0.651,
+    "COMMUNITY_FBA": 0.782,
+    "COMMUNITY_ND": 0.191,
+    "COMMUNITY_PBD": 0.21,
+    "COMMUNITY_FBD": 0.235,
+    "INSTITUTIONAL": 1.245
+   }
+  },
+  {
+   "id": 12,
+   "age": 65,
+   "sex": 1,
+   "orec": 2,
+   "ltimcaid": 0,
+   "icd10": [
+    "F209",
+    "F1020",
+    "K7030"
+   ],
+   "hccs": [
+    "HCC139",
+    "HCC151",
+    "HCC64"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.532,
+    "COMMUNITY_PBA": 1.575,
+    "COMMUNITY_FBA": 2.075,
+    "COMMUNITY_ND": 1.057,
+    "COMMUNITY_PBD": 0.882,
+    "COMMUNITY_FBD": 1.23,
+    "INSTITUTIONAL": 2.102
+   }
+  },
+  {
+   "id": 13,
+   "age": 65,
+   "sex": 2,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "N186",
+    "N184"
+   ],
+   "hccs": [
+    "HCC326"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.145,
+    "COMMUNITY_PBA": 1.33,
+    "COMMUNITY_FBA": 1.42,
+    "COMMUNITY_ND": 0.927,
+    "COMMUNITY_PBD": 1.05,
+    "COMMUNITY_FBD": 0.946,
+    "INSTITUTIONAL": 2.146
+   }
+  },
+  {
+   "id": 14,
+   "age": 65,
+   "sex": 1,
+   "orec": 0,
+   "ltimcaid": 0,
+   "icd10": [
+    "I5042",
+    "I4820"
+   ],
+   "hccs": [
+    "HCC226",
+    "HCC238"
+   ],
+   "scores": {
+    "COMMUNITY_NA": 1.068,
+    "COMMUNITY_PBA": 1.114,
+    "COMMUNITY_FBA": 1.484,
+    "COMMUNITY_ND": 0.995,
+    "COMMUNITY_PBD": 0.986,
+    "COMMUNITY_FBD": 1.213,
+    "INSTITUTIONAL": 1.737
+   }
+  }
+ ]
+}
