@@ -7,4 +7,4 @@ spans, redacts PHI, and flags risk-adjustment (HCC) documentation gaps.
 from chartsight.nlp import MODEL_LABEL, REGION, analyze, load_notes, redact
 
 __all__ = ["MODEL_LABEL", "REGION", "analyze", "load_notes", "redact"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
