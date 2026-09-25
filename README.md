@@ -42,11 +42,72 @@ payment-integrity task with a well-designed prompt, entirely inside AWS.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
-pip install -e .
+pip install -e ".[ui]"
 streamlit run app.py
 ```
 
 Without AWS credentials the app runs in **sample mode** immediately.
+
+## API, batch processing and Docker
+
+The pipeline is a library with three ways to run it. The Streamlit app is now
+just one client of it.
+
+| Extra | Gives you |
+| --- | --- |
+| *(none)* | the pipeline and the `chartsight` batch CLI |
+| `api` | the FastAPI service (`chartsight serve`) |
+| `ui` | the Streamlit app |
+
+**HTTP API** (`chartsight/api.py`). Run it with `pip install -e ".[api]"` and
+then `chartsight serve`. Interactive docs are at http://localhost:8000/docs.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /health` | Liveness, plus which engine a request would use |
+| `POST /v1/analyze` | Full pipeline for one note: PHI, codes, grounding, HCCs, RAF, gaps. Optional `demographics`, `segment`, `base_rate_pmpm`, `mode`, `grounded` |
+| `POST /v1/raf` | V28 risk score and documentation opportunities for a list of codes. Deterministic, no LLM call |
+| `GET /v1/codes/search?q=…` | Retrieval over the official ICD-10-CM code set |
+
+```bash
+curl -s localhost:8000/v1/raf -H 'content-type: application/json' \
+  -d '{"codes": ["E11.9", "I50.9", "N18.9"], "demographics": {"age": 72, "sex": "M"}}'
+```
+
+Set `CHARTSIGHT_API_KEY` to require an `X-API-Key` header on `/v1/*`;
+`/health` stays open for load balancers. Notes are PHI, so they travel only in
+POST bodies, which are never logged, and note length is capped
+(`CHARTSIGHT_MAX_NOTE_CHARS`, default 20,000).
+
+**Batch** (`chartsight/cli.py`), for a JSONL file of `{"id", "text"}` records
+or a directory of `.txt` files:
+
+```bash
+chartsight analyze-batch notes.jsonl -o results.jsonl --mode aws --workers 4
+```
+
+Results are written as each note finishes. The run is **resumable**: re-running
+skips ids already completed, including after a crash left a half-written line,
+so an interrupted Bedrock run never re-bills finished notes. One failing note
+is recorded as an error and doesn't stop the batch. The exit code is non-zero
+if any note failed.
+
+**UI as a client.** When `CHARTSIGHT_API_URL` is set, the app sends everything
+to the API through `chartsight/client.py`, which uses only the standard
+library. Otherwise it runs in-process as before. A test runs both backends,
+one against a real uvicorn server, and checks they return identical results.
+
+**Docker.** One `Dockerfile` builds two slim, non-root images. The API image
+has a healthcheck and doesn't ship Streamlit.
+
+```bash
+docker compose up --build        # UI on :8501, calling the API on :8000
+```
+
+Compose mounts `~/.aws` read-only into the API container for live Bedrock (pick
+a profile with `AWS_PROFILE`). Without credentials, both services run on the
+sample engine. CI builds both images and smoke-tests the API container: health
+check, API-key enforcement, a real `/v1/analyze` call, and the non-root user.
 
 ### Enable live AWS (Amazon Bedrock)
 
@@ -234,7 +295,7 @@ Writes `evals/report.md` and `evals/report.json`.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"   # includes the api and ui extras
 ruff check .          # lint
 ruff format .         # format
 mypy                  # strict type check
@@ -242,11 +303,15 @@ pytest                # unit + eval-harness regression tests
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of the above plus the eval harness
-against the sample engine on every push/PR.
+against the sample engine on every push/PR, then builds and smoke-tests the
+Docker images.
 
 ## Files
 
-- `app.py` — Streamlit UI.
+- `app.py` — Streamlit UI (in-process, or a client of the API via `CHARTSIGHT_API_URL`).
+- `chartsight/api.py` — FastAPI service.
+- `chartsight/cli.py` — `chartsight` command: resumable batch analysis, `serve`.
+- `chartsight/client.py` — in-process / HTTP backends the UI talks to.
 - `chartsight/nlp.py` — Bedrock inference, redaction, the sample fallback engine.
 - `chartsight/schema.py` — Pydantic extraction schema (Bedrock tool-use input).
 - `chartsight/guardrail.py` — hallucinated-code guardrail.
@@ -257,9 +322,10 @@ against the sample engine on every push/PR.
 - `data/icd10cm_codes.tsv` — FY2026 ICD-10-CM codes, descriptions, inclusion terms, index entries.
 - `data/hcc_v28.tsv` — CMS-HCC V28 ICD-10 → HCC crosswalk with labels and age/sex edits.
 - `data/cms_hcc_v28/` — V28 model tables (relative factors, hierarchies, categories, interactions).
-- `scripts/build_reference.py` — (re)generates both data files from the official CDC/CMS sources.
+- `scripts/build_reference.py` — (re)generates the data files from the official CDC/CMS sources.
+- `Dockerfile`, `docker-compose.yml` — API and UI images; `docker compose up` runs both.
 - `evals/` — fragment library, gold-set generator, and scorer.
-- `tests/` — pytest suite (pipeline smoke test + eval-harness regression tests).
+- `tests/` — pytest suite: pipeline, grounding, RAF (vs. CMS's software), API, CLI, eval harness.
 
 ## Synthetic data — no PHI
 
