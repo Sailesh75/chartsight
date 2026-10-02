@@ -142,6 +142,20 @@ def _score_conditions(
                 break
 
 
+def _drop_optional(
+    optional: list[dict[str, Any]], pred_conditions: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Remove predictions of optional gold codes, so they count as neither right nor wrong."""
+    return [
+        p
+        for p in pred_conditions
+        if not any(
+            p.get("code") == o["code"] and _overlaps(o["begin"], o["end"], p.get("begin", 0), p.get("end", 0))
+            for o in optional
+        )
+    ]
+
+
 def _hccs(codes: list[str]) -> set[str]:
     return {m.hcc for code in codes for m in reference.hcc_for(code)}
 
@@ -236,12 +250,13 @@ def run(gold_path: Path, mode: str, limit: int | None, grounded: bool = True) ->
         report.n_notes += 1
         report.engine_seen.add(pred["engine"])
 
-        _score_conditions(gold["conditions"], pred["conditions"], report)
-        _score_hcc(gold["conditions"], pred["conditions"], report)
+        scored = _drop_optional(gold.get("optional_conditions", []), pred["conditions"])
+        _score_conditions(gold["conditions"], scored, report)
+        _score_hcc(gold["conditions"], scored, report)
         _score_phi(gold["phi"], pred["phi"], report)
         _score_gaps(gold["expected_gap_keys"], pred["insights"]["gaps"], report)
         _score_retrieval(gold["text"], gold["conditions"], report)
-        _score_raf(gold["text"], gold["conditions"], pred["conditions"], report)
+        _score_raf(gold["text"], gold["conditions"], scored, report)
         report.grounded_notes += bool(pred.get("grounded"))
         report.grounding_changed += sum(
             1 for c in pred["conditions"] if c.get("first_pass_code", c["code"]) != c["code"]
