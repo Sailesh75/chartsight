@@ -35,3 +35,10 @@ evals/report.json
 
 # Personal study notes — never committed
 STUDY_GUIDE.md
+
+# Terraform: local state and plugins (state can hold account details); the lock file IS committed
+infra/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/terraform.tfvars

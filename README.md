@@ -42,22 +42,30 @@ payment-integrity task with a well-designed prompt, entirely inside AWS.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
-pip install -e ".[ui]"
-streamlit run app.py
+pip install -e ".[api]"
+chartsight serve                  # open http://localhost:8000
 ```
 
-Without AWS credentials the app runs in **sample mode** immediately.
+Without AWS credentials the app runs in **sample mode** immediately. To force
+sample mode when credentials are present (no Bedrock cost), set `FORCE_MOCK=1`.
+
+**The web UI** (`chartsight/web/`) is a single static page served by the API at
+`/`. Each piece of coded evidence is highlighted in the note and linked to its
+code card: hover one and the other lights up. A de-identified view swaps PHI
+for type chips. The risk-score panel re-scores instantly through `/v1/raf` as
+you change age, sex, segment or base rate, with no model call. It has light and
+dark themes and plain HTML/CSS/JS with no build step. Every node is built with
+`textContent`, so a pasted note can never inject markup.
 
 ## API, batch processing and Docker
 
-The pipeline is a library with three ways to run it. The Streamlit app is now
-just one client of it.
+The pipeline is a library. The web UI, the batch CLI and the eval harness are
+all clients of it.
 
 | Extra | Gives you |
 | --- | --- |
 | *(none)* | the pipeline and the `chartsight` batch CLI |
-| `api` | the FastAPI service (`chartsight serve`) |
-| `ui` | the Streamlit app |
+| `api` | the FastAPI service and the web UI it serves (`chartsight serve`) |
 
 **HTTP API** (`chartsight/api.py`). Run it with `pip install -e ".[api]"` and
 then `chartsight serve`. Interactive docs are at http://localhost:8000/docs.
@@ -68,6 +76,7 @@ then `chartsight serve`. Interactive docs are at http://localhost:8000/docs.
 | `POST /v1/analyze` | Full pipeline for one note: PHI, codes, grounding, HCCs, RAF, gaps. Optional `demographics`, `segment`, `base_rate_pmpm`, `mode`, `grounded` |
 | `POST /v1/raf` | V28 risk score and documentation opportunities for a list of codes. Deterministic, no LLM call |
 | `GET /v1/codes/search?q=…` | Retrieval over the official ICD-10-CM code set |
+| `GET /v1/samples` | The synthetic demo notes the UI offers |
 
 ```bash
 curl -s localhost:8000/v1/raf -H 'content-type: application/json' \
@@ -92,22 +101,26 @@ so an interrupted Bedrock run never re-bills finished notes. One failing note
 is recorded as an error and doesn't stop the batch. The exit code is non-zero
 if any note failed.
 
-**UI as a client.** When `CHARTSIGHT_API_URL` is set, the app sends everything
-to the API through `chartsight/client.py`, which uses only the standard
-library. Otherwise it runs in-process as before. A test runs both backends,
-one against a real uvicorn server, and checks they return identical results.
+**Python client** (`chartsight/client.py`), for scripts and notebooks. It uses
+only the standard library: `get_backend()` returns an HTTP client when
+`CHARTSIGHT_API_URL` is set, else runs the pipeline in-process. A test runs
+both, one against a real uvicorn server, and checks they return identical
+results.
 
-**Docker.** One `Dockerfile` builds two slim, non-root images. The API image
-has a healthcheck and doesn't ship Streamlit.
+**Docker.** One slim, non-root image serves the API and the web UI, with a
+healthcheck.
 
 ```bash
-docker compose up --build        # UI on :8501, calling the API on :8000
+docker compose up --build        # UI http://localhost:8000, API docs /docs
 ```
 
-Compose mounts `~/.aws` read-only into the API container for live Bedrock (pick
-a profile with `AWS_PROFILE`). Without credentials, both services run on the
-sample engine. CI builds both images and smoke-tests the API container: health
-check, API-key enforcement, a real `/v1/analyze` call, and the non-root user.
+Compose mounts `~/.aws` read-only into the container for live Bedrock (pick a
+profile with `AWS_PROFILE`). Without credentials it runs on the sample engine.
+CI builds the image and smoke-tests the container: health check, the UI page,
+API-key enforcement, a real `/v1/analyze` call, and the non-root user.
+
+When `CHARTSIGHT_API_KEY` is set, the UI asks for the key once and keeps it in
+the browser's local storage.
 
 ### Enable live AWS (Amazon Bedrock)
 
@@ -115,7 +128,7 @@ check, API-key enforcement, a real `/v1/analyze` call, and the non-root user.
 2. Configure credentials in `~/.aws/credentials` (region `us-east-1`).
 3. In the Bedrock console → **Model access**, submit the Anthropic use-case form
    and enable a Claude model.
-4. Relaunch `streamlit run app.py`.
+4. Restart `chartsight serve`.
 
 Override the model with `BEDROCK_MODEL_ID` (default
 `us.anthropic.claude-haiku-4-5-20251001-v1:0`) and its display name with
@@ -124,6 +137,21 @@ Override the model with `BEDROCK_MODEL_ID` (default
 **Cost:** Claude Haiku 4.5 on Bedrock costs a fraction of a cent per note (two
 calls per note with grounding on). A new AWS account's free credits cover this
 project many times over.
+
+## Deploy to AWS (Lambda)
+
+`infra/` holds the Terraform for a serverless deployment. The same image runs on
+**AWS Lambda** through the Lambda Web Adapter, behind a public Function URL,
+so an idle demo costs about nothing. The function's IAM role can call only the
+one Claude model, so no AWS keys live in the app. GitHub Actions deploys on
+every push to `master` with short-lived **OIDC** credentials, so no keys live in
+GitHub either.
+
+A public page that calls Claude needs a cost ceiling. `chartsight/quota.py`
+caps live analyses per UTC day with an atomic DynamoDB counter
+(`CHARTSIGHT_LIVE_DAILY_LIMIT`, default 100 in the Terraform). Past the cap,
+the free sample engine answers and the UI says so. A concurrency limit and a
+budget alert back it up. Step-by-step setup is in [`infra/README.md`](infra/README.md).
 
 ## Structured output & the code guardrail
 
@@ -235,6 +263,11 @@ cancer mappings, originally-disabled and institutional cases, and the HCC 223
 recode. `tests/test_raf.py` asserts all 98 scores (14 × 7 segments) are
 identical.
 
+The segment defaults by age, as CMS assigns it: community non-dual **aged** at
+65+, and **disabled** below 65, where the patient is treated as entitled by
+disability. The aged segments have no rates under 65, so scoring a 64-year-old
+there would silently drop the demographic term.
+
 The payment RAF applies the CY2026 Rate Announcement adjustments: normalization
 factor **1.067** and the **5.9%** MA coding-pattern adjustment. Dollars use the
 CY2026 national FFS USPCC (**$1,230.52** PMPM) as an illustrative base rate. A
@@ -295,7 +328,7 @@ Writes `evals/report.md` and `evals/report.json`.
 ## Development
 
 ```bash
-pip install -e ".[dev]"   # includes the api and ui extras
+pip install -e ".[dev]"   # includes the api extra
 ruff check .          # lint
 ruff format .         # format
 mypy                  # strict type check
@@ -304,14 +337,16 @@ pytest                # unit + eval-harness regression tests
 
 CI (`.github/workflows/ci.yml`) runs all of the above plus the eval harness
 against the sample engine on every push/PR, then builds and smoke-tests the
-Docker images.
+Docker image. On `master` it then deploys to Lambda (once configured; see
+`infra/README.md`) and smoke-tests the live URL.
 
 ## Files
 
-- `app.py` — Streamlit UI (in-process, or a client of the API via `CHARTSIGHT_API_URL`).
+- `chartsight/web/` — the web UI (static HTML/CSS/JS, served by the API at `/`).
 - `chartsight/api.py` — FastAPI service.
 - `chartsight/cli.py` — `chartsight` command: resumable batch analysis, `serve`.
-- `chartsight/client.py` — in-process / HTTP backends the UI talks to.
+- `chartsight/client.py` — Python client: in-process or over HTTP.
+- `chartsight/quota.py` — daily cap on live (billed) analyses for a public deployment.
 - `chartsight/nlp.py` — Bedrock inference, redaction, the sample fallback engine.
 - `chartsight/schema.py` — Pydantic extraction schema (Bedrock tool-use input).
 - `chartsight/guardrail.py` — hallucinated-code guardrail.
@@ -323,7 +358,8 @@ Docker images.
 - `data/hcc_v28.tsv` — CMS-HCC V28 ICD-10 → HCC crosswalk with labels and age/sex edits.
 - `data/cms_hcc_v28/` — V28 model tables (relative factors, hierarchies, categories, interactions).
 - `scripts/build_reference.py` — (re)generates the data files from the official CDC/CMS sources.
-- `Dockerfile`, `docker-compose.yml` — API and UI images; `docker compose up` runs both.
+- `Dockerfile`, `docker-compose.yml` — one image for the API + UI; `docker compose up` runs it.
+- `infra/` — Terraform for AWS Lambda + Function URL, ECR, DynamoDB quota, budget, GitHub OIDC deploy role.
 - `evals/` — fragment library, gold-set generator, and scorer.
 - `tests/` — pytest suite: pipeline, grounding, RAF (vs. CMS's software), API, CLI, eval harness.
 

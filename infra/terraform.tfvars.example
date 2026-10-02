@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+budget_email = "you@example.com"
+
+# Optional overrides (defaults shown):
+# live_daily_limit            = 100
+# reserved_concurrency        = 3      # null on a new account with a concurrency quota of 10
+# monthly_budget_usd          = 10
+# create_github_oidc_provider = true   # false if the account already has GitHub's OIDC provider
