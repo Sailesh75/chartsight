@@ -24,6 +24,8 @@ the CMS-HCC V28 model:
      the right fix.
   5. Negation / history / resolved fragments (tags containing "adversarial")
      have `codes=()` — a correct coder must NOT code them.
+  6. Codes coders legitimately differ on (e.g. supplementary Z-codes) go in
+     `optional_codes`: the scorer neither rewards nor penalizes them.
 Mark anything you are unsure about with a `# REVIEW:` comment.
 """
 
@@ -44,6 +46,9 @@ class Fragment:
     text: str
     codes: tuple[ExpectedCode, ...]
     hcc_v28: tuple[str, ...] = ()
+    # Codes a correct coder may or may not assign (e.g. supplementary family-history Z-codes).
+    # The scorer neither rewards nor penalizes predicting them.
+    optional_codes: tuple[ExpectedCode, ...] = ()
     gap: str | None = None
     note: str = ""
     tags: tuple[str, ...] = field(default_factory=tuple)
@@ -255,7 +260,8 @@ FRAGMENTS: tuple[Fragment, ...] = (
     Fragment(
         id="mdd-unspec",
         text="depression, on sertraline",
-        codes=(_c("F32.A", "Depression, unspecified"),),  # REVIEW: F32.A (2024+) vs F32.9
+        # Reviewed: tabular lists "Depression NOS" under F32.A; F32.9 is "Major depression NOS".
+        codes=(_c("F32.A", "Depression, unspecified"),),
         hcc_v28=(),
         gap="mdd-unspecified-severity",
         note="Bare 'depression' -> F32.A. Gap: no episode/severity, no HCC.",
@@ -289,7 +295,9 @@ FRAGMENTS: tuple[Fragment, ...] = (
             _c("E66.01", "Morbid (severe) obesity due to excess calories"),
             _c("Z68.41", "Body mass index [BMI] 40.0-44.9, adult"),
         ),
-        hcc_v28=("HCC48",),  # V28 verified. REVIEW: confirm the BMI Z-code is expected alongside E66.01
+        # Reviewed: BMI Z-codes are reportable with an associated weight diagnosis; E66.01 and
+        # Z68.41 both map to V28 HCC 48.
+        hcc_v28=("HCC48",),
         note="E66.01 + BMI Z-code. BMI code alone does not risk-adjust.",
         tags=("multi-code",),
     ),
@@ -321,8 +329,10 @@ FRAGMENTS: tuple[Fragment, ...] = (
     Fragment(
         id="adv-family-history-dm",
         text="family history of type 2 diabetes mellitus in mother",
-        codes=(),  # REVIEW: some coders would assign Z83.3 — decide if the gold set expects it
-        note="Family history, not a patient condition. Gold set treats as no code.",
+        codes=(),
+        # Reviewed: family-history Z-codes are supplementary, so coders differ on Z83.3.
+        optional_codes=(_c("Z83.3", "Family history of diabetes mellitus"),),
+        note="Family history, not a patient condition: E11.x is wrong; Z83.3 is optional.",
         tags=("adversarial", "history"),
     ),
     Fragment(
@@ -364,6 +374,8 @@ def validate_library() -> list[str]:
             problems.append(f"{fragment.id}: has a gap but no codes")
         if "adversarial" in fragment.tags and fragment.gap is not None:
             problems.append(f"{fragment.id}: adversarial fragment should not carry a gap")
+        if {c.code for c in fragment.codes} & {c.code for c in fragment.optional_codes}:
+            problems.append(f"{fragment.id}: a code is both required and optional")
     return problems
 
 
