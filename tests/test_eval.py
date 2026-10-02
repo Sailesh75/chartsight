@@ -77,3 +77,21 @@ def test_scorer_reports_payment_accuracy(tmp_path) -> None:  # type: ignore[no-u
     assert report.raf_gold_total > 0
     assert 0 <= report.raf_exact_notes <= report.n_notes
     assert report.raf_abs_error_total >= abs(report.raf_pred_total - report.raf_gold_total) - 1e-9
+
+
+def test_optional_codes_are_neither_rewarded_nor_penalized() -> None:
+    from evals.run import _drop_optional, _score_conditions
+
+    optional = [{"code": "Z83.3", "begin": 10, "end": 40}]
+    gold = [{"code": "I10", "begin": 50, "end": 70}]
+    preds = [
+        {"code": "I10", "begin": 50, "end": 70, "confidence": 0.9},
+        {"code": "Z83.3", "begin": 10, "end": 40, "confidence": 0.9},  # optional: ignored
+        {"code": "E11.9", "begin": 10, "end": 40, "confidence": 0.9},  # wrong: still a false positive
+    ]
+    scored = _drop_optional(optional, preds)
+    assert [p["code"] for p in scored] == ["I10", "E11.9"]
+
+    report = Report()
+    _score_conditions(gold, scored, report)
+    assert (report.code_exact.tp, report.code_exact.fp, report.code_exact.fn) == (1, 1, 0)
