@@ -54,6 +54,12 @@ SEGMENTS: dict[str, str] = {
     "INSTITUTIONAL": "Institutional (long-term)",
 }
 DEFAULT_SEGMENT = "COMMUNITY_NA"
+# Aged segments have no demographic cells under 65: anyone younger is entitled by disability.
+_DISABLED_COUNTERPART = {
+    "COMMUNITY_NA": "COMMUNITY_ND",
+    "COMMUNITY_FBA": "COMMUNITY_FBD",
+    "COMMUNITY_PBA": "COMMUNITY_PBD",
+}
 
 _AGE_BANDS = ((0, 34), (35, 44), (45, 54), (55, 59), (60, 64), (65, 69), (70, 74), (75, 79), (80, 84))
 _AGE_BANDS_TAIL = ((85, 89), (90, 94))
@@ -193,7 +199,13 @@ def model_hccs(codes: list[str], demo: Demographics) -> set[str]:
     return hccs
 
 
-def score(codes: list[str], demo: Demographics, segment: str = DEFAULT_SEGMENT) -> RafScore:
+def default_segment(demo: Demographics) -> str:
+    """Community, non-dual: the aged segment at 65+, the disabled one below (as CMS assigns it)."""
+    return _DISABLED_COUNTERPART[DEFAULT_SEGMENT] if demo.age < 65 else DEFAULT_SEGMENT
+
+
+def score(codes: list[str], demo: Demographics, segment: str | None = None) -> RafScore:
+    segment = segment or default_segment(demo)
     if segment not in SEGMENTS:
         raise ValueError(f"unknown segment {segment!r}; expected one of {sorted(SEGMENTS)}")
     model = _model()
@@ -315,7 +327,7 @@ def is_unspecified(code: str) -> bool:
 def opportunities(
     codes: list[str],
     demo: Demographics,
-    segment: str = DEFAULT_SEGMENT,
+    segment: str | None = None,
     base_rate_pmpm: float = USPCC_PMPM,
 ) -> list[Opportunity]:
     """Value of documenting each unspecified code more specifically, best opportunity first.
@@ -324,6 +336,7 @@ def opportunities(
     to, restricted to the documented condition's own HCC family (see `_families`).
     """
     codes = [reference.normalize(c) for c in codes]
+    segment = segment or default_segment(demo)
     baseline = score(codes, demo, segment).payment
     labels = _model().labels
     found = []
@@ -372,7 +385,10 @@ def parse_demographics(text: str) -> Demographics:
     male = _MALE_RE.search(text)
     if age_match is None or bool(female) == bool(male):
         return DEFAULT_DEMOGRAPHICS
-    return Demographics(age=int(age_match.group(1)), sex=2 if female else 1)
+    age = int(age_match.group(1))
+    # Under 65, Medicare entitlement can only come from disability (OREC 1), which the model's
+    # disabled interaction terms depend on.
+    return Demographics(age=age, sex=2 if female else 1, orec=1 if age < 65 else 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -381,10 +397,11 @@ def parse_demographics(text: str) -> Demographics:
 def assess(
     codes: list[str],
     demo: Demographics,
-    segment: str = DEFAULT_SEGMENT,
+    segment: str | None = None,
     base_rate_pmpm: float = USPCC_PMPM,
 ) -> dict[str, object]:
     """JSON-friendly RAF breakdown + documentation opportunities for one patient."""
+    segment = segment or default_segment(demo)
     current = score(codes, demo, segment)
     return {
         "segment": segment,

@@ -65,7 +65,7 @@ def analyze_batch(
     mode: str = "auto",
     grounded: bool = True,
     workers: int = 4,
-    segment: str = raf.DEFAULT_SEGMENT,
+    segment: str | None = None,
     base_rate_pmpm: float = raf.USPCC_PMPM,
 ) -> dict[str, Any]:
     done = _done_ids(output)
@@ -132,7 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     batch.add_argument("--mode", choices=["auto", "aws", "mock"], default="auto")
     batch.add_argument("--no-grounding", action="store_true")
     batch.add_argument("--workers", type=int, default=4, help="concurrent notes (mind Bedrock quotas)")
-    batch.add_argument("--segment", choices=list(raf.SEGMENTS), default=raf.DEFAULT_SEGMENT)
+    batch.add_argument(
+        "--segment", choices=list(raf.SEGMENTS), help="default: by age, aged at 65+ else disabled"
+    )
     batch.add_argument("--base-rate", type=float, default=raf.USPCC_PMPM, help="$ PMPM for RAF dollars")
 
     serve = sub.add_parser("serve", help="run the HTTP API (needs the 'api' extra)")

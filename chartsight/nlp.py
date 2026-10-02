@@ -413,7 +413,7 @@ def analyze(
     mode: str = "auto",
     grounded: bool = True,
     demographics: raf.Demographics | None = None,
-    segment: str = raf.DEFAULT_SEGMENT,
+    segment: str | None = None,
     base_rate_pmpm: float = raf.USPCC_PMPM,
 ) -> dict[str, Any]:
     """Run the full pipeline.
