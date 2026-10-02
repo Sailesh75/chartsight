@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChartSight</title>
+  <meta name="description" content="Evidence-linked HCC coding: ICD-10-CM codes with the exact evidence, verified against the official code set and valued with the CMS-HCC V28 risk model.">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+  <script>
+    // Apply the saved theme before first paint so there's no light/dark flash.
+    try { const t = localStorage.getItem("cs-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="ChartSight home">
+        <img src="logo.svg" alt="" width="28" height="28">
+        <span class="wordmark">chart<span>sight</span></span>
+      </a>
+      <nav class="topbar-right">
+        <span id="engine" class="pill" title="Which engine analyzes notes"><span class="dot"></span><span class="pill-text">Connecting…</span></span>
+        <a class="nav-link" href="/docs" target="_blank" rel="noopener">API</a>
+        <a class="nav-link" href="https://github.com/Sailesh75/chartsight" target="_blank" rel="noopener">GitHub</a>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle dark mode">
+          <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Every code, with its evidence.</h1>
+      <p>Paste a clinical note. ChartSight returns ICD-10-CM codes linked to the exact words that justify them, verifies each against the official FY2026 code set, and values the patient with the CMS-HCC V28 risk model.</p>
+    </section>
+
+    <section class="card composer" aria-label="Clinical note">
+      <div class="composer-head">
+        <div id="samples" class="chips" role="group" aria-label="Sample notes"></div>
+        <span class="hint">Never paste real patient information</span>
+      </div>
+      <textarea id="note" spellcheck="false" placeholder="Paste a clinical note…" aria-label="Clinical note"></textarea>
+      <div class="composer-foot">
+        <span class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span>
+        <button id="analyze" class="btn-primary" type="button">
+          <span class="btn-label">Analyze note</span><span class="spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+
+    <div id="key-banner" class="banner" hidden>
+      <span>This server requires an API key.</span>
+      <input id="key-input" type="password" placeholder="X-API-Key" autocomplete="off">
+      <button id="key-save" class="btn-quiet" type="button">Save</button>
+    </div>
+    <div id="error" class="banner banner-error" role="alert" hidden></div>
+
+    <section id="results" hidden>
+      <div id="stats" class="stats"></div>
+      <div id="notices"></div>
+
+      <div class="grid-2">
+        <article class="card">
+          <header class="card-head">
+            <h2>Evidence</h2>
+            <div class="seg" role="tablist" aria-label="Note view">
+              <button type="button" class="on" data-view="original" role="tab" aria-selected="true">Original</button>
+              <button type="button" data-view="redacted" role="tab" aria-selected="false">De-identified</button>
+            </div>
+          </header>
+          <div id="note-view" class="note-view"></div>
+          <p class="legend"><span class="sw sw-ev"></span>coded evidence <span class="sw sw-phi"></span>PHI</p>
+        </article>
+
+        <article class="card">
+          <header class="card-head"><h2>Codes</h2><span id="codes-meta" class="meta"></span></header>
+          <div id="codes" class="codes"></div>
+        </article>
+      </div>
+
+      <article class="card" id="risk-card">
+        <header class="card-head">
+          <h2>Risk score</h2>
+          <span id="risk-meta" class="meta"></span>
+        </header>
+        <div class="assumptions">
+          <label>Segment<select id="segment"></select></label>
+          <label>Age<input id="age" type="number" min="0" max="120"></label>
+          <label>Sex<select id="sex"><option value="F">Female</option><option value="M">Male</option></select></label>
+          <label>Base rate <span class="muted">$ PMPM</span><input id="base-rate" type="number" min="100" step="10"></label>
+        </div>
+        <div class="risk-grid">
+          <div>
+            <h3>How the score adds up</h3>
+            <div id="terms" class="bars"></div>
+            <p id="hierarchy" class="footnote"></p>
+          </div>
+          <div>
+            <h3>Documentation opportunities</h3>
+            <div id="opps" class="opps"></div>
+          </div>
+        </div>
+        <p class="footnote">Each outcome is scored for the whole patient, and only more specific forms of the same condition are shown. A code is justified by what the record supports, never by what it pays.</p>
+      </article>
+
+      <article class="card">
+        <header class="card-head"><h2>Documentation gaps</h2></header>
+        <ul id="gaps" class="gaps"></ul>
+      </article>
+    </section>
+
+    <section class="how" aria-label="How it works">
+      <h2>How it works</h2>
+      <ol>
+        <li><b>De-identify</b><span>Find and redact names, IDs, dates and phone numbers.</span></li>
+        <li><b>Extract</b><span>Claude on Amazon Bedrock returns each condition with its verbatim evidence.</span></li>
+        <li><b>Ground</b><span>BM25 retrieves real candidate codes; the model must choose from them.</span></li>
+        <li><b>Verify</b><span>Every code is checked against the official FY2026 ICD-10-CM set.</span></li>
+        <li><b>Value</b><span>HCCs come from the CMS crosswalk; the RAF matches CMS's own software.</span></li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span id="foot-engine"></span>
+    <span>Synthetic data only. No real PHI.</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

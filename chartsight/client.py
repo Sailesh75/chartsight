@@ -1,4 +1,4 @@
-"""How the Streamlit UI (or any Python caller) talks to ChartSight: in-process or over HTTP.
+"""A Python client for ChartSight, for scripts and notebooks: in-process or over HTTP.
 
     backend = get_backend()   # HTTPBackend if CHARTSIGHT_API_URL is set, else LocalBackend
 

@@ -10,8 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Sailesh Kafle" }]
-# Core = the pipeline + batch CLI. Each way of serving it is an extra, so the API image
-# doesn't ship Streamlit and the UI doesn't ship an ASGI server.
+# Core = the pipeline + batch CLI. The `api` extra adds the HTTP service, which also serves
+# the web UI (chartsight/web/, static files with no extra dependency).
 dependencies = [
     "boto3>=1.34",
     "pydantic>=2.7",
@@ -22,11 +22,8 @@ api = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
 ]
-ui = [
-    "streamlit>=1.37",
-]
 dev = [
-    "chartsight[api,ui]",
+    "chartsight[api]",
     "httpx>=0.27",  # fastapi.testclient
     "pytest>=8.0",
     "ruff>=0.6",
@@ -39,6 +36,9 @@ chartsight = "chartsight.cli:main"
 
 [tool.setuptools]
 packages = ["chartsight"]
+
+[tool.setuptools.package-data]
+chartsight = ["py.typed", "web/*"]
 
 [tool.ruff]
 line-length = 110
@@ -56,10 +56,6 @@ python_version = "3.12"  # matches the dev venv's interpreter; keeps mypy able t
 strict = true
 warn_unreachable = true
 files = ["chartsight", "evals", "tests", "scripts"]
-
-[[tool.mypy.overrides]]
-module = ["streamlit.*"]
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

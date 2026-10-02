@@ -7,10 +7,13 @@ Endpoints
   POST /v1/analyze          full pipeline for one note (PHI, codes, grounding, HCCs, RAF, gaps)
   POST /v1/raf              CMS-HCC V28 risk score for a list of codes. Deterministic, no LLM.
   GET  /v1/codes/search     retrieval over the official ICD-10-CM code set
+  GET  /v1/samples          the synthetic demo notes (open, like /health)
+  GET  /                    the web UI (chartsight/web/), a static client of the endpoints above
 
 Configuration (environment)
   CHARTSIGHT_API_KEY        when set, every /v1 request must send it in the X-API-Key header
   CHARTSIGHT_MAX_NOTE_CHARS max accepted note length (default 20000)
+  CHARTSIGHT_LIVE_DAILY_LIMIT, CHARTSIGHT_QUOTA_TABLE — daily cap on live analyses (chartsight.quota)
   AWS_REGION, BEDROCK_MODEL_ID, FORCE_MOCK — as for the library (see chartsight.nlp)
 
 Notes are PHI. They travel only in POST bodies, which are never logged. uvicorn's
@@ -24,16 +27,20 @@ import os
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Security
 from fastapi.security import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chartsight import __version__, raf
-from chartsight.nlp import MODEL_LABEL, analyze, aws_available
+from chartsight.nlp import MODEL_LABEL, analyze, aws_available, load_notes
+from chartsight.quota import get_quota
 from chartsight.retrieval import default_retriever
 
+WEB_DIR = Path(__file__).resolve().parent / "web"
 MAX_NOTE_CHARS = int(os.environ.get("CHARTSIGHT_MAX_NOTE_CHARS", "20000"))
 Segment = Literal[
     "COMMUNITY_NA",
@@ -52,18 +59,24 @@ Segment = Literal[
 class DemographicsIn(BaseModel):
     age: int = Field(ge=0, le=125)
     sex: Literal["M", "F"]
-    orec: Literal[0, 1, 2, 3] = Field(default=0, description="Original reason for entitlement (CMS OREC)")
+    orec: Literal[0, 1, 2, 3] | None = Field(
+        default=None,
+        description="Original reason for entitlement (CMS OREC). Defaults to 1 (disability) under 65, else 0.",
+    )
     ltimcaid: bool = Field(default=False, description="Long-term-institutional Medicaid")
 
     def to_model(self) -> raf.Demographics:
-        return raf.Demographics(self.age, 1 if self.sex == "M" else 2, self.orec, self.ltimcaid)
+        orec = self.orec if self.orec is not None else (1 if self.age < 65 else 0)
+        return raf.Demographics(self.age, 1 if self.sex == "M" else 2, orec, self.ltimcaid)
 
 
 class RiskSettings(BaseModel):
     demographics: DemographicsIn | None = Field(
         default=None, description="Defaults to the age/sex documented in the note, else a flagged assumption."
     )
-    segment: Segment = "COMMUNITY_NA"  # == raf.DEFAULT_SEGMENT (asserted in tests)
+    segment: Segment | None = Field(
+        default=None, description="Defaults by age: community non-dual aged at 65+, disabled below."
+    )
     base_rate_pmpm: float = Field(
         default=raf.USPCC_PMPM,
         gt=0,
@@ -169,6 +182,14 @@ class AnalyzeResponse(_Open):
     ungrounded: list[dict[str, Any]]
     raf: RafResult
     gaps: list[str]
+    quota_exhausted: bool = Field(
+        default=False, description="True when today's live cap was reached and the sample engine answered."
+    )
+
+
+class LiveQuota(BaseModel):
+    limit: int
+    used: int
 
 
 class Health(BaseModel):
@@ -176,6 +197,14 @@ class Health(BaseModel):
     version: str
     engine: str
     model: str
+    auth_required: bool
+    live_quota: LiveQuota | None = Field(default=None, description="Present when live analyses are capped.")
+
+
+class SampleNote(BaseModel):
+    id: str
+    title: str
+    text: str
 
 
 # --------------------------------------------------------------------------- #
@@ -205,22 +234,41 @@ def require_api_key(key: Annotated[str | None, Security(_api_key_header)]) -> No
 
 @app.get("/health", response_model=Health)
 def health() -> Health:
-    engine = f"Amazon Bedrock ({MODEL_LABEL})" if aws_available() else "local sample engine"
-    return Health(status="ok", version=__version__, engine=engine, model=MODEL_LABEL)
+    live = aws_available()
+    quota = get_quota() if live else None
+    return Health(
+        status="ok",
+        version=__version__,
+        engine=f"Amazon Bedrock ({MODEL_LABEL})" if live else "local sample engine",
+        model=MODEL_LABEL,
+        auth_required=bool(os.environ.get("CHARTSIGHT_API_KEY")),
+        live_quota=LiveQuota(limit=quota.limit, used=quota.used()) if quota else None,
+    )
+
+
+@app.get("/v1/samples", response_model=list[SampleNote])
+def samples() -> list[dict[str, str]]:
+    # Open on purpose: synthetic demo notes, and the UI needs them before it has a key.
+    return load_notes()
 
 
 @app.post("/v1/analyze", response_model=AnalyzeResponse, dependencies=[Depends(require_api_key)])
 def analyze_note(req: AnalyzeRequest) -> dict[str, Any]:
     # Sync def on purpose: boto3 blocks, so FastAPI runs this in its threadpool.
+    mode = req.mode
+    quota_exhausted = False
+    quota = get_quota()
+    if quota and mode != "mock" and (mode == "aws" or aws_available()) and not quota.try_acquire():
+        mode, quota_exhausted = "mock", True  # over today's live cap: answer with the free engine
     result = analyze(
         req.text,
-        mode=req.mode,
+        mode=mode,
         grounded=req.grounded,
         demographics=req.demographics.to_model() if req.demographics else None,
         segment=req.segment,
         base_rate_pmpm=req.base_rate_pmpm,
     )
-    return {**result, "gaps": result["insights"]["gaps"]}
+    return {**result, "gaps": result["insights"]["gaps"], "quota_exhausted": quota_exhausted}
 
 
 @app.post("/v1/raf", response_model=RafResult, dependencies=[Depends(require_api_key)])
@@ -237,3 +285,7 @@ def search_codes(
         {"code": c.code, "description": c.description, "score": c.score, "hcc_v28": list(c.hcc)}
         for c in default_retriever().search(q, k=k)
     ]
+
+
+# Mounted last so every route above takes precedence over the static files.
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
