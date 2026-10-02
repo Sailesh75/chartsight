@@ -105,8 +105,12 @@ def test_api_key_enforced_when_configured(client: TestClient, monkeypatch: pytes
     assert client.get("/health").status_code == 200  # liveness stays open for load balancers
 
 
-def test_segment_default_matches_library() -> None:
-    assert AnalyzeRequest(text="x").segment == raf.DEFAULT_SEGMENT
+def test_segment_defaults_by_age(client: TestClient) -> None:
+    assert AnalyzeRequest(text="x").segment is None  # resolved by raf.default_segment
+    young = client.post("/v1/raf", json={"codes": ["I50.9"], "demographics": {"age": 64, "sex": "M"}}).json()
+    old = client.post("/v1/raf", json={"codes": ["I50.9"], "demographics": {"age": 66, "sex": "M"}}).json()
+    assert (young["segment"], old["segment"]) == ("COMMUNITY_ND", "COMMUNITY_NA")
+    assert young["terms"][0]["variable"] == "M60_64"  # the demographic term is no longer dropped
 
 
 # --------------------------------------------------------------------------- #
@@ -154,3 +158,12 @@ def test_get_backend_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CHARTSIGHT_API_URL", "http://api:8000/")
     backend = get_backend()
     assert isinstance(backend, HTTPBackend) and backend.base_url == "http://api:8000"
+
+
+def test_serves_web_ui_and_samples(client: TestClient) -> None:
+    page = client.get("/")
+    assert page.status_code == 200 and "<title>ChartSight</title>" in page.text
+    assert client.get("/app.js").status_code == 200
+    samples = client.get("/v1/samples").json()
+    assert samples and {"id", "title", "text"} <= samples[0].keys()
+    assert client.get("/health").json()["auth_required"] is False

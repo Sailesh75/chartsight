@@ -150,3 +150,15 @@ def test_analyze_includes_raf() -> None:
     assert risk["demographics"]["age"] == 74 and not risk["demographics"]["assumed"]
     assert risk["payment"] > 0
     assert {o["code"] for o in risk["opportunities"]} == {"I50.9", "N18.9"}
+
+
+def test_under_65_defaults_to_disabled_segment_and_entitlement() -> None:
+    from chartsight.raf import default_segment
+
+    demo = parse_demographics("Assessment: 64-year-old male with heart failure.")
+    assert demo.orec == 1 and demo.disabled
+    assert default_segment(demo) == "COMMUNITY_ND"
+    assert default_segment(parse_demographics("72-year-old female")) == "COMMUNITY_NA"
+    young = score(["I50.9"], demo)
+    assert young.segment == "COMMUNITY_ND"
+    assert young.demographic_terms and young.demographic_terms[0].variable == "M60_64"
