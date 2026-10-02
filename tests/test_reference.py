@@ -66,3 +66,10 @@ def test_fragment_hcc_labels_match_official_crosswalk() -> None:
         assert set(fragment.hcc_v28) == official, (
             f"{fragment.id}: hcc_v28={fragment.hcc_v28} but CMS V28 says {sorted(official)}"
         )
+
+
+def test_fragment_codes_are_real_billable_codes() -> None:
+    for fragment in FRAGMENTS:
+        for expected in fragment.codes + fragment.optional_codes:
+            assert reference.is_valid(expected.code), f"{fragment.id}: {expected.code} is not in FY2026"
+            assert reference.description(expected.code) == expected.description, fragment.id
