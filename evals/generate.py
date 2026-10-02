@@ -142,21 +142,23 @@ def _render_note(rng: random.Random, fragments: list[Fragment], note_num: int) -
         phi.append({"text": value, "type": phi_type, "begin": idx, "end": idx + len(value)})
 
     conditions: list[dict[str, Any]] = []
+    optional_conditions: list[dict[str, Any]] = []
     cursor = len(header) + len(cc_line) + len(intro)
     for frag in fragments:
         idx = text.index(frag.text, cursor)
         end = idx + len(frag.text)
         cursor = end
-        for code in frag.codes:
-            conditions.append(
-                {
-                    "code": code.code,
-                    "description": code.description,
-                    "begin": idx,
-                    "end": end,
-                    "fragment_id": frag.id,
-                }
-            )
+        for codes, target in ((frag.codes, conditions), (frag.optional_codes, optional_conditions)):
+            for code in codes:
+                target.append(
+                    {
+                        "code": code.code,
+                        "description": code.description,
+                        "begin": idx,
+                        "end": end,
+                        "fragment_id": frag.id,
+                    }
+                )
 
     expected_gap_keys = sorted({f.gap for f in fragments if f.gap})
 
@@ -165,6 +167,7 @@ def _render_note(rng: random.Random, fragments: list[Fragment], note_num: int) -
         "text": text,
         "phi": phi,
         "conditions": conditions,
+        "optional_conditions": optional_conditions,
         "expected_gap_keys": expected_gap_keys,
         "fragment_ids": [f.id for f in fragments],
     }
