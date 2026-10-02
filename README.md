@@ -3,10 +3,10 @@
 **Evidence-linked HCC coding.** An LLM pipeline that reads a clinical note,
 extracts diagnoses as **ICD-10-CM codes** with the *exact evidence span* that
 supports each one, removes **PHI**, and flags **risk-adjustment (HCC)
-documentation gaps** — powered by **Amazon Bedrock** (Anthropic Claude).
+documentation gaps** powered by **Amazon Bedrock** (Anthropic Claude).
 
-The output shape — *code + confidence + the exact evidence span* plus a
-documentation-gap review — mirrors the risk-adjustment coding and
+The output shape *code + confidence + the exact evidence span* plus a
+documentation-gap review mirrors the risk-adjustment coding and
 medical-record review work that payment-integrity vendors do for health plans.
 
 ## What it does
