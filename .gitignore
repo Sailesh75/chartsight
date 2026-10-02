@@ -32,3 +32,6 @@ evals/report.json
 
 # Downloaded source zips for scripts/build_reference.py --cache-dir .cache
 .cache/
+
+# Personal study notes — never committed
+STUDY_GUIDE.md
