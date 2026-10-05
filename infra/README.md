@@ -82,6 +82,7 @@ pass. The deploy job also smoke-tests the live URL.
 
 | Symptom | Fix |
 | --- | --- |
+| Deploy fails: *Not authorized to perform sts:AssumeRoleWithWebIdentity* | The role trusts a different OIDC subject than GitHub sends. Repos created after 2026-07-15 use the immutable form `repo:OWNER@ID/REPO@ID`. Get yours from `https://api.github.com/repos/OWNER/REPO/actions/oidc/customization/sub` and set `github_subject_prefix`. |
 | `apply` fails on reserved concurrency | New accounts have a concurrency quota of 10, and AWS keeps 10 unreserved. Set `reserved_concurrency = null`. |
 | The pill says *Sample engine* | Check the function's logs. Bedrock model access must be enabled for Claude Haiku 4.5 in this account and region. |
 | The URL returns 403 | Both `aws_lambda_permission` resources must exist (public URLs need two statements since Oct 2025). |

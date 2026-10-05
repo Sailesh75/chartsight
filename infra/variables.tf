@@ -10,10 +10,14 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "github_repo" {
-  description = "owner/repo allowed to deploy through GitHub Actions OIDC."
+variable "github_subject_prefix" {
+  description = <<-EOT
+    The repo's GitHub OIDC subject prefix; only its workflows can deploy. Repos created after
+    2026-07-15 use the immutable form repo:OWNER@OWNER_ID/REPO@REPO_ID (older ones: repo:OWNER/REPO).
+    Look it up: curl https://api.github.com/repos/OWNER/REPO/actions/oidc/customization/sub
+  EOT
   type        = string
-  default     = "Sailesh75/chartsight"
+  default     = "repo:Sailesh75@65943201/chartsight@1364939198"
 }
 
 variable "github_branch" {

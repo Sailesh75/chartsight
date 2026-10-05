@@ -1,5 +1,7 @@
 # GitHub Actions deploys with short-lived OIDC credentials: no AWS keys stored in GitHub.
-# Only pushes to var.github_branch of var.github_repo can assume this role.
+# Only workflows on var.github_branch of the repo named by var.github_subject_prefix can assume
+# this role. The prefix carries GitHub's immutable owner/repo IDs, so a re-created repo with the
+# same name can't.
 
 resource "aws_iam_openid_connect_provider" "github" {
   count          = var.create_github_oidc_provider ? 1 : 0
@@ -26,7 +28,7 @@ resource "aws_iam_role" "deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}"
+          "token.actions.githubusercontent.com:sub" = "${var.github_subject_prefix}:ref:refs/heads/${var.github_branch}"
         }
       }
     }]
