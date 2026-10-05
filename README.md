@@ -1,5 +1,14 @@
 # ChartSight
 
+[![CI](https://github.com/Sailesh75/chartsight/actions/workflows/ci.yml/badge.svg)](https://github.com/Sailesh75/chartsight/actions/workflows/ci.yml)
+
+**[Live demo](https://5zsg4er4aoovrris3vtems7kae0aoeyr.lambda-url.us-east-1.on.aws/)** · real Claude analysis, capped at 100 notes a day · synthetic notes only
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="ChartSight analyzing an ED note: each ICD-10-CM code is linked to the highlighted words that justify it, with its CMS-HCC V28 category and confidence, plus the patient's risk score." src="docs/screenshot-light.png">
+</picture>
+
 **Evidence-linked HCC coding.** An LLM pipeline that reads a clinical note,
 extracts diagnoses as **ICD-10-CM codes** with the *exact evidence span* that
 supports each one, removes **PHI**, and flags **risk-adjustment (HCC)
@@ -8,6 +17,18 @@ documentation gaps** powered by **Amazon Bedrock** (Anthropic Claude).
 The output shape *code + confidence + the exact evidence span* plus a
 documentation-gap review mirrors the risk-adjustment coding and
 medical-record review work that payment-integrity vendors do for health plans.
+
+### Results at a glance
+
+Measured on a 60-note synthetic gold set with Claude Haiku 4.5 (details in
+[RAG grounding](#rag-grounding-on-the-official-code-set)):
+
+| | Single pass | **Grounded (shipped)** |
+| --- | --- | --- |
+| Exact ICD-10-CM code F1 | 63.9% | **80.8%** |
+| HCC capture F1 (CMS-HCC V28) | 88.9% | **95.7%** |
+| PHI recall | 100% | **100%** |
+| Risk score matches CMS's own model software | | **98/98 test scores** |
 
 ## What it does
 
@@ -206,25 +227,31 @@ Pass `grounded=False` to `analyze()`, or `--no-grounding` to the eval runner,
 for the single-pass baseline so the two can be A/B-scored.
 
 **Measured impact** (Claude Haiku 4.5 on Bedrock, 60-note synthetic gold set,
-one run each, 2026-09-23):
+one run each, 2026-10-04):
 
 | Metric | Single pass | Grounded | Δ |
 | --- | --- | --- | --- |
-| Exact code F1 | 62.8% | **78.5%** | +15.7 pts |
-| Exact code precision | 71.7% | **86.4%** | +14.7 pts |
-| HCC capture F1 (V28) | 88.5% | **94.9%** | +6.4 pts |
-| Accuracy of codes at ≥0.9 confidence | 75.2% | **93.1%** | better calibrated |
+| Exact code F1 | 63.9% | **80.8%** | +16.9 pts |
+| Exact code precision | 72.9% | **90.2%** | +17.3 pts |
+| HCC capture F1 (V28) | 88.9% | **95.7%** | +6.8 pts |
+| Accuracy of codes at ≥0.9 confidence | 83.5% | **96.7%** | better calibrated |
+| Notes with the exact gold payment RAF | 51/60 | **53/60** | |
+| Mean RAF error, per member per year | $719 | **$562** | |
 
-The grounded pass changed 45 first-pass codes. Typical fixes: a non-billable
-category code (N18.3 → N18.32), a code that doesn't exist (I73.911 → I70.211),
+The grounded pass changed 39 first-pass codes. Typical fixes: documented
+chronicity the first pass ignored (I48.91 → I48.20, *chronic* atrial
+fibrillation, 12 times), a code that doesn't exist (I73.921 → I70.211), a
+non-billable category code replaced by the documented stage (N18.3 → N18.4),
 and a wrong acuity (I50.23 → I50.22). Treat the numbers as directional: the
 set is small and synthetic, and each mode ran once.
 
-The payment impact is smaller than the code-level gain suggests. Scored with
-the RAF calculator below, grounding moves notes with the exact gold RAF from
-51/60 to 54/60, and the mean RAF error from $507 to $475 per member per year.
-Most of its fixes stay inside the same HCC: I50.23 and I50.22 both map to
-HCC 226, so the payment doesn't change.
+The payment impact is smaller than the code-level gain suggests, because most
+fixes stay inside the same HCC: I50.23 and I50.22 both map to HCC 226, so the
+payment doesn't change.
+
+**Known limitation:** gap detection over-flags. Both modes find nearly every
+real documentation gap (91–96% recall), but about half of fully documented
+notes also get a spurious one. Tightening that is the next improvement.
 
 ### Reference data
 
@@ -249,6 +276,11 @@ HCC 226), and claudication-only PAD (I70.211) no longer does.
 `tests/test_reference.py` now checks every fragment against the CMS crosswalk.
 
 ## Risk score (RAF) and what a gap is worth
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/risk-dark.png">
+  <img alt="The risk-score panel: each term of the CMS-HCC V28 score with its coefficient, and for each unspecified code, what each more specific documentation outcome would be worth per year." src="docs/risk-light.png">
+</picture>
 
 `chartsight/raf.py` computes the CMS-HCC V28 risk score the way CMS's own
 PY2026 model software does: ICD-10 → HCC with age/sex edits, the HCC 223

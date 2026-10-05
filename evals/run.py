@@ -324,8 +324,9 @@ def render_markdown(report: Report, mode: str, grounded: bool = True) -> str:
         "",
         "## Payment accuracy (CMS-HCC V28 RAF)",
         "",
-        "Per-note payment RAF implied by the predicted codes vs. the gold codes (same demographics, "
-        "community non-dual aged, CY2026 normalization + coding-pattern adjustment).",
+        "Per-note payment RAF implied by the predicted codes vs. the gold codes (same demographics; "
+        "community non-dual segment, aged at 65+ and disabled below; CY2026 normalization + "
+        "coding-pattern adjustment).",
         "",
         f"- Notes with the exact gold RAF: **{report.raf_exact_notes}/{report.n_notes}**",
         f"- Mean absolute RAF error: **{mean_raf_error:.3f}** "
