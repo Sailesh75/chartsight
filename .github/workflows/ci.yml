@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch: # "Run workflow" button: re-test and redeploy master without a new commit
 
 jobs:
   test:
@@ -73,13 +74,16 @@ jobs:
         if: always()
         run: docker logs api || true
 
-  # Builds the image, pushes it to ECR and points Lambda at it. Runs only on pushes to master,
+  # Builds the image, pushes it to ECR and points Lambda at it. Runs on pushes to master (or the
+  # "Run workflow" button on master),
   # and only once the AWS_DEPLOY_ROLE_ARN repo variable exists (see infra/README.md).
   # Authenticates with GitHub OIDC: no AWS keys are stored in GitHub.
   deploy:
     runs-on: ubuntu-latest
     needs: [test, docker]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/master' && vars.AWS_DEPLOY_ROLE_ARN != ''
     permissions:
       id-token: write
       contents: read
