@@ -16,11 +16,18 @@ eval harness's retrieval-recall metric.
 
 from __future__ import annotations
 
+import gc
+import hashlib
 import math
+import os
+import pickle
 import re
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Protocol
 
 from chartsight import reference
@@ -160,6 +167,52 @@ class BM25Retriever:
         return results
 
 
+# --------------------------------------------------------------------------- #
+# The default index, optionally pre-built at image build time
+# --------------------------------------------------------------------------- #
+# Building the index takes ~1-1.5 s locally and several times that on a cold Lambda with a
+# fraction of a vCPU. The Docker build saves it (save_index) and CHARTSIGHT_BM25_INDEX points
+# at the file; loading it is ~5x faster. The file is only ever written by our own build, and it
+# carries the code table's fingerprint, so an index built from different data is never used.
+INDEX_ENV = "CHARTSIGHT_BM25_INDEX"
+
+
+@contextmanager
+def _gc_paused() -> Iterator[None]:
+    # Building or unpickling allocates millions of small objects; the cyclic GC would rescan
+    # them repeatedly for cycles that don't exist. Pausing it roughly halves the time.
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
+def _fingerprint() -> str:
+    return hashlib.sha256(reference.CODES_PATH.read_bytes()).hexdigest()
+
+
+def save_index(path: Path) -> None:
+    """Build the default index and write it, with the code table's fingerprint, to `path`."""
+    with _gc_paused():
+        retriever = BM25Retriever(list(reference.icd10_codes().values()))
+    path.write_bytes(pickle.dumps((_fingerprint(), retriever), protocol=pickle.HIGHEST_PROTOCOL))
+
+
+def _load_index(path: Path) -> BM25Retriever | None:
+    with _gc_paused():
+        fingerprint, retriever = pickle.loads(path.read_bytes())  # our own build artifact
+    return retriever if fingerprint == _fingerprint() and isinstance(retriever, BM25Retriever) else None
+
+
 @lru_cache(maxsize=1)
 def default_retriever() -> BM25Retriever:
-    return BM25Retriever(list(reference.icd10_codes().values()))
+    prebuilt = os.environ.get(INDEX_ENV)
+    if prebuilt and Path(prebuilt).is_file():
+        loaded = _load_index(Path(prebuilt))
+        if loaded is not None:
+            return loaded
+    with _gc_paused():
+        return BM25Retriever(list(reference.icd10_codes().values()))

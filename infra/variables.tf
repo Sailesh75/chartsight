@@ -52,9 +52,15 @@ variable "reserved_concurrency" {
 }
 
 variable "memory_mb" {
-  description = "Lambda memory; CPU scales with it, which speeds up the cold-start index build."
+  description = "Lambda memory. CPU scales with it: below 1769 MB a function gets only part of a vCPU, which slows the single-threaded Python cold start."
   type        = number
-  default     = 1024
+  default     = 2048
+}
+
+variable "keep_warm" {
+  description = "Ping the function every 5 minutes so visitors rarely hit a cold start (~8,600 tiny invocations a month, inside the free tier)."
+  type        = bool
+  default     = true
 }
 
 variable "monthly_budget_usd" {

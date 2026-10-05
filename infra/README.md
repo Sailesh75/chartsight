@@ -8,7 +8,8 @@ line in the `Dockerfile`. Terraform in this folder creates everything:
 | Resource | Purpose |
 | --- | --- |
 | ECR repository | Stores the image (the last 5 are kept). |
-| Lambda function + Function URL | Serves the UI at `/` and the API, 1 GB memory, 60 s timeout. |
+| Lambda function + Function URL | Serves the UI at `/` and the API, 2 GB memory (a full vCPU for the cold start), 60 s timeout. |
+| EventBridge Scheduler + role | Keep-warm: a ping every 5 minutes, so visitors rarely hit a cold start (`keep_warm`). |
 | IAM role (function) | Logs, `bedrock:InvokeModel` on the one Claude model, and the quota counter. Nothing else. |
 | DynamoDB table | The daily live-analysis counter (`chartsight/quota.py`). |
 | CloudWatch log group | 14-day retention. |
@@ -86,7 +87,7 @@ pass. The deploy job also smoke-tests the live URL.
 | `apply` fails on reserved concurrency | New accounts have a concurrency quota of 10, and AWS keeps 10 unreserved. Set `reserved_concurrency = null`. |
 | The pill says *Sample engine* | Check the function's logs. Bedrock model access must be enabled for Claude Haiku 4.5 in this account and region. |
 | The URL returns 403 | Both `aws_lambda_permission` resources must exist (public URLs need two statements since Oct 2025). |
-| The first request is slow | Cold start: about 3–5 s after the function has been idle. Later requests are fast. |
+| The first request is slow | A cold start, when Lambda starts a fresh copy. The image ships a pre-built search index and keep-warm pings hold one copy ready, so it should be rare. Check `Init Duration` in the function's logs. |
 
 ## Tear down
 

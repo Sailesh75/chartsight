@@ -154,6 +154,58 @@ resource "aws_lambda_permission" "url_invoke" {
 }
 
 # --------------------------------------------------------------------------- #
+# Keep-warm: EventBridge Scheduler invokes the function every 5 minutes. The Web Adapter
+# forwards the event to POST /events (chartsight/api.py), so one instance stays initialized.
+# --------------------------------------------------------------------------- #
+resource "aws_iam_role" "scheduler" {
+  count = var.keep_warm ? 1 : 0
+  name  = "${var.name}-keep-warm"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+      Condition = { StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id } }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  count = var.keep_warm ? 1 : 0
+  name  = "${var.name}-keep-warm"
+  role  = aws_iam_role.scheduler[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "lambda:InvokeFunction"
+      Resource = aws_lambda_function.app.arn
+    }]
+  })
+}
+
+resource "aws_scheduler_schedule" "keep_warm" {
+  count               = var.keep_warm ? 1 : 0
+  name                = "${var.name}-keep-warm"
+  schedule_expression = "rate(5 minutes)"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.app.arn
+    role_arn = aws_iam_role.scheduler[0].arn
+    input    = jsonencode({ source = "keep-warm" })
+
+    retry_policy {
+      maximum_retry_attempts = 0 # a missed ping is harmless; the next one comes in 5 minutes
+    }
+  }
+}
+
+# --------------------------------------------------------------------------- #
 # Budget alert (account-wide)
 # --------------------------------------------------------------------------- #
 resource "aws_budgets_budget" "monthly" {

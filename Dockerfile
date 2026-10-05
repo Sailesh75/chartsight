@@ -4,9 +4,14 @@
 #   docker build -t chartsight .
 #   docker run -p 8000:8000 chartsight     # UI http://localhost:8000, API docs /docs
 # Or: docker compose up --build
+# The same image runs on AWS Lambda (see infra/).
 
 FROM python:3.12-slim AS base
-ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_NO_CACHE_DIR=1     PIP_DISABLE_PIP_VERSION_CHECK=1     CHARTSIGHT_DATA_DIR=/app/data
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CHARTSIGHT_DATA_DIR=/app/data
 WORKDIR /app
 RUN useradd --create-home --uid 10001 chartsight
 
@@ -15,19 +20,26 @@ RUN useradd --create-home --uid 10001 chartsight
 # cached until the dependency list changes, not every time the code does.
 FROM base AS deps
 COPY pyproject.toml README.md ./
-RUN mkdir chartsight && touch chartsight/__init__.py     && pip install ".[api]" && pip uninstall -y chartsight && rm -rf chartsight
+RUN mkdir chartsight && touch chartsight/__init__.py \
+    && pip install ".[api]" && pip uninstall -y chartsight && rm -rf chartsight
 
 
 FROM deps AS api
 # AWS Lambda Web Adapter: lets this same image run on Lambda (it forwards Lambda invocations
 # to uvicorn as plain HTTP). It is a Lambda extension, so it does nothing anywhere else.
+# Its readiness check uses the static page so startup never waits on an AWS call.
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
 ENV AWS_LWA_PORT=8000 \
-    AWS_LWA_READINESS_CHECK_PATH=/health
+    AWS_LWA_READINESS_CHECK_PATH=/ \
+    CHARTSIGHT_BM25_INDEX=/app/bm25.pkl
 COPY chartsight ./chartsight
 RUN pip install --no-deps .
 COPY data ./data
+# Pre-build the retrieval index so a cold start loads it instead of computing it
+# (chartsight.retrieval.save_index; it is ignored if it doesn't match data/).
+RUN python -c "from pathlib import Path; from chartsight.retrieval import save_index; save_index(Path('/app/bm25.pkl'))"
 USER chartsight
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 CMD ["uvicorn", "chartsight.api:app", "--host", "0.0.0.0", "--port", "8000"]

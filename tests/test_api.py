@@ -167,3 +167,7 @@ def test_serves_web_ui_and_samples(client: TestClient) -> None:
     samples = client.get("/v1/samples").json()
     assert samples and {"id", "title", "text"} <= samples[0].keys()
     assert client.get("/health").json()["auth_required"] is False
+
+
+def test_keep_warm_event_is_accepted(client: TestClient) -> None:
+    assert client.post("/events", json={"source": "keep-warm"}).status_code == 204

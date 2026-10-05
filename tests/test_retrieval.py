@@ -54,3 +54,28 @@ def test_fragment_library_recall_at_5() -> None:
             top5 = [c.code for c in retriever.search(f"{fragment.text} {expected.description}", k=5)]
             hits += expected.code in top5
     assert hits / total >= 0.95, f"recall@5 = {hits}/{total}"
+
+
+def test_prebuilt_index_matches_a_fresh_build(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import pickle
+
+    from chartsight import reference, retrieval
+
+    path = tmp_path / "bm25.pkl"
+    retrieval.save_index(path)
+    query = "chronic systolic congestive heart failure"
+    fresh = [c.code for c in retrieval.BM25Retriever(list(reference.icd10_codes().values())).search(query)]
+
+    monkeypatch.setenv(retrieval.INDEX_ENV, str(path))
+    retrieval.default_retriever.cache_clear()
+    try:
+        assert [c.code for c in retrieval.default_retriever().search(query)] == fresh
+
+        # An index built from a different code table is ignored, never trusted.
+        _, index = pickle.loads(path.read_bytes())
+        path.write_bytes(pickle.dumps(("stale-fingerprint", index)))
+        assert retrieval._load_index(path) is None
+        retrieval.default_retriever.cache_clear()
+        assert [c.code for c in retrieval.default_retriever().search(query)] == fresh
+    finally:
+        retrieval.default_retriever.cache_clear()

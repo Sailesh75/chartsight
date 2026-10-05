@@ -246,6 +246,13 @@ def health() -> Health:
     )
 
 
+@app.post("/events", status_code=204, include_in_schema=False)
+def lambda_event() -> None:
+    # On Lambda, the Web Adapter forwards non-HTTP invocations here. The only one we send is the
+    # keep-warm ping from EventBridge Scheduler (infra/main.tf): its job is done by arriving.
+    return None
+
+
 @app.get("/v1/samples", response_model=list[SampleNote])
 def samples() -> list[dict[str, str]]:
     # Open on purpose: synthetic demo notes, and the UI needs them before it has a key.
